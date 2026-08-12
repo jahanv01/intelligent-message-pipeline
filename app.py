@@ -155,5 +155,4 @@ with gr.Blocks(title="Message Intelligence Pipeline") as demo:
         upload_sens = gr.Dataframe(label="Part 3 — Sensitive Findings")
         upload_btn.click(run_upload, inputs=file_input, outputs=[upload_summary, upload_cls, upload_ext, upload_sens])
 
-if __name__ == "__main__":
-    demo.launch()
+demo.launch(ssr_mode=False)
