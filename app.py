@@ -103,7 +103,7 @@ def run_upload(file):
     if file is None:
         return "Please upload a CSV file.", None, None, None
     try:
-        df = pd.read_csv(file.name)
+        df = pd.read_csv(file)
     except Exception as e:
         return f"Could not read file: {e}", None, None, None
 
