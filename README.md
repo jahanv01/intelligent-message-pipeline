@@ -61,7 +61,7 @@ pip install -r requirements.txt
 Hosted on Render (free tier):
 **[https://intelligent-message-pipeline.onrender.com](https://intelligent-message-pipeline.onrender.com)**
 
-> **Note on free-tier limitations:** Render's free instance uses 1 shared CPU and spins down after 15 minutes of inactivity — the first request after sleep takes ~30–60 seconds to wake up. Inference is also slower than on dedicated hardware.
+> **Note on free-tier limitations:** Render's free instance uses 1 shared CPU and spins down after 15 minutes of inactivity — the first request after sleep takes ~30–60 seconds to wake up. Once running, the **Run Demo** button takes ~10 seconds (model inference on a single slow CPU core). Uploading a large CSV may trigger an out-of-memory kill — the free tier has 512 MB RAM shared between the model and the data. This deployment is for **demo purposes only** and is not production-ready.
 >
 > Hugging Face Spaces was the preferred hosting platform (zero cold-start, faster CPU), but as of 2026 the free tier no longer includes Gradio/Docker compute — a PRO subscription is required.
 
