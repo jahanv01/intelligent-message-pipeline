@@ -1,0 +1,28 @@
+# Real dataset - assignment rules forbid publishing this
+dataset/
+messages.xls
+messages.xlsx
+messages.csv
+mandatory_demo_ids.csv
+mandatory_demo_ids.xlsx
+
+# Logs - local only
+logs/
+
+# Temporary debug/check scripts
+_*.py
+test_mandatory.py
+
+# Results derived from the dataset - do not publish
+results/
+
+# Standard Python
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.venv/
+*.egg-info/
+
+# Windows download metadata
+*:Zone.Identifier
