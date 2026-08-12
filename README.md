@@ -1,14 +1,3 @@
----
-title: Message Intelligence Pipeline
-emoji: 🧠
-colorFrom: blue
-colorTo: indigo
-sdk: gradio
-sdk_version: 5.38.0
-app_file: app.py
-pinned: false
----
-
 # Message Intelligence Pipeline
 
 Fully local pipeline that classifies messages, extracts tasks/events, and detects + masks sensitive information. No external API is called — all inference runs on-device.
