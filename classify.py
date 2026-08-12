@@ -259,12 +259,12 @@ _subclass_list = None
 def _load_model():
     global _model, _anchor_matrix, _subclass_list
     try:
-        from sentence_transformers import SentenceTransformer
-        _model = SentenceTransformer("all-MiniLM-L6-v2")
+        from fastembed import TextEmbedding
+        _model = TextEmbedding("sentence-transformers/all-MiniLM-L6-v2")
         _subclass_list = SUBCLASSES
         rows = []
         for sc in _subclass_list:
-            vecs = _model.encode(sc["anchors"], convert_to_numpy=True)
+            vecs = np.array(list(_model.embed(sc["anchors"])))
             rows.append(vecs.mean(axis=0))
         mat = np.array(rows)
         norms = np.linalg.norm(mat, axis=1, keepdims=True)
@@ -278,7 +278,7 @@ _load_model()
 
 def _cosine_classify(message: str):
     """Return (sub_class_dict, similarity_score)."""
-    vec = _model.encode([message], convert_to_numpy=True)[0]
+    vec = np.array(list(_model.embed([message])))[0]
     norm = np.linalg.norm(vec)
     vec = vec / max(norm, 1e-10)
     sims = _anchor_matrix.dot(vec)
