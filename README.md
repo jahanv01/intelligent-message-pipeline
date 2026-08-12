@@ -11,7 +11,7 @@ Fully local pipeline that classifies messages, extracts tasks/events, and detect
 | Python | 3.8 or higher |
 | pip | 21+ |
 | RAM | 2 GB free (model loads into memory) |
-| Disk | ~500 MB (PyTorch CPU build + model cache) |
+| Disk | ~200 MB (fastembed ONNX model cache) |
 | OS | Linux / macOS / Windows (WSL recommended on Windows) |
 
 A virtual environment (`venv`) is required — do not install dependencies system-wide.
@@ -48,16 +48,11 @@ python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 ```
 
-**4. Install PyTorch (CPU-only, avoids the large GPU build)**
-```bash
-pip install torch --index-url https://download.pytorch.org/whl/cpu
-```
-
-**5. Install all dependencies**
+**4. Install all dependencies**
 ```bash
 pip install -r requirements.txt
 ```
-> First run downloads the `all-MiniLM-L6-v2` model (~90 MB) and caches it in `~/.cache/huggingface/`. Every run after that is instant.
+> First run downloads the `all-MiniLM-L6-v2` ONNX model (~90 MB) via `fastembed` and caches it in `~/.cache/fastembed/`. Every run after that is instant.
 
 ---
 
@@ -161,14 +156,14 @@ intelligent-message-pipeline/
 
 ## How classification works (Part 1)
 
-Instead of keyword lists, the classifier uses a sub-class taxonomy with **17 narrow sub-classes**. Each sub-class has 4–6 human-written anchor sentences. A local sentence-transformer model (`all-MiniLM-L6-v2`, ~90 MB, CPU) embeds the message and all anchors, then picks the closest sub-class by cosine similarity. The sub-class maps up to the main category deterministically.
+Instead of keyword lists, the classifier uses a sub-class taxonomy with **17 narrow sub-classes**. Each sub-class has 4–6 human-written anchor sentences. `fastembed` (ONNX, CPU-only, no PyTorch) embeds the message and all anchors using `all-MiniLM-L6-v2`, then picks the closest sub-class by cosine similarity. The sub-class maps up to the main category deterministically.
 
 Sensitive information is still detected via regex (OTP / card / PIN / token / recovery code) and overrides the model result — regex is the right tool for fixed-format secrets.
 
 ```
 message
   ├─► regex sensitive detector ──► sensitive_information (hard override)
-  └─► sentence-transformer
+  └─► fastembed (ONNX)
            ↓ cosine similarity vs all sub-class anchors
       best sub-class → main category
       confidence = normalised similarity score
@@ -212,7 +207,7 @@ See `sensitive.py`.
 ## Assumptions and limitations
 
 - Messages are expected to be in English.
-- The sentence-transformer model may misclassify ambiguous messages where a single sentence contains signals from multiple categories (e.g. `"I might prefer evening meetings now"` — preference vs. event).
+- The fastembed ONNX model may misclassify ambiguous messages where a single sentence contains signals from multiple categories (e.g. `"I might prefer evening meetings now"` — preference vs. event).
 - Person extraction relies on capitalisation; lowercase names in casual text are missed.
 - Sensitive detection uses regex — novel secret formats not covered by the patterns will be missed.
 
