@@ -38,6 +38,11 @@ intelligent-message-pipeline/
 The `dataset/` folder is git-ignored and will never be committed.
 
 **3. Create a virtual environment**
+
+On Ubuntu/Debian, install the venv package first if missing:
+```bash
+sudo apt install python3-venv -y   # or python3.14-venv if using Python 3.14
+```
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
