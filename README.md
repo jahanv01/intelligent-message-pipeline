@@ -44,7 +44,7 @@ On Ubuntu/Debian, install the venv package first if missing:
 sudo apt install python3-venv -y   # or python3.14-venv if using Python 3.14
 ```
 ```bash
-python3 -m venv .venv
+python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 ```
 
@@ -71,7 +71,7 @@ Hosted on Render (free tier):
 
 ```bash
 source .venv/bin/activate
-python3 app.py
+python app.py
 ```
 
 Open `http://127.0.0.1:7860` in your browser.
@@ -86,7 +86,7 @@ Open `http://127.0.0.1:7860` in your browser.
 ## Run the full pipeline (all 900 messages)
 
 ```bash
-python3 main.py --input dataset/messages.csv --mandatory dataset/mandatory_demo_ids.csv
+python main.py --input dataset/messages.csv --mandatory dataset/mandatory_demo_ids.csv
 ```
 
 This processes every message in chronological order and writes three output files to `results/`:
