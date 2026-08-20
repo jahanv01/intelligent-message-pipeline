@@ -58,6 +58,13 @@ EXTRACTION_SUBCLASSES = [
             "conference", "event starts", "kick-off", "kickoff",
         ],
     },
+    {
+        # L2 template: "A new <name> session/meeting is scheduled for DATE at TIME."
+        "sub": "scheduled_session_announcement",
+        "type": "event",
+        "priority": "medium",
+        "keywords": ["is scheduled for"],
+    },
     # -- tasks ----------------------------------------------------------------
     {
         "sub": "submission_task",
@@ -93,6 +100,13 @@ EXTRACTION_SUBCLASSES = [
             "please confirm", "please update", "please complete",
             "complete", "prepare", "finish",
         ],
+    },
+    {
+        # L2 template: "New task: <action> by DATE."
+        "sub": "new_task_announcement",
+        "type": "task",
+        "priority": "medium",
+        "keywords": ["new task:"],
     },
 ]
 
@@ -242,9 +256,13 @@ def extract_item(message_id: str, message: str, msg_date: datetime, sender: str)
     priority = "high" if any(p in text for p in PRIORITY_HIGH_SIGNALS) else matched["priority"]
 
     prefix = "TASK" if matched["type"] == "task" else "EVENT"
-    num = message_id.split("_")[-1].lstrip("0") or "0"
+    # Derived from the FULL message_id, not just its trailing number: L2 ships
+    # multiple files with independent numbering (MSG_0001.., DEMO_001..), and
+    # a number-only id (e.g. "TASK_10") would collide across them (MSG_0010
+    # and DEMO_010 would both produce "TASK_10") -- silently merging two
+    # unrelated items' state in the priority/linking engine downstream.
     return {
-        "item_id": f"{prefix}_{num}",
+        "item_id": f"{prefix}_{message_id}",
         "type": matched["type"],
         "sub_class": matched["sub"],
         "title": _clean_title(message),
@@ -253,6 +271,7 @@ def extract_item(message_id: str, message: str, msg_date: datetime, sender: str)
         "time": _resolve_time(message),
         "person": _resolve_person(message, sender),
         "priority": priority,
+        "sender": sender,
         "source_message_id": message_id,
     }
 

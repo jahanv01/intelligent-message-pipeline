@@ -1,0 +1,234 @@
+"""
+Message Linking
+------------------
+Shared primitive for L2 Part 1 (priority.py) and, later, L2 Part 2
+(related-message grouping): given a message, decide (a) does it describe
+a *status change* to an already-known task/event, and if so (b) which
+one.
+
+Design: the L2/L1 datasets are template-generated. Status-change messages
+("Update: X has been completed successfully.", "The deadline to X is now
+DATE...", "You can cancel X; it is no longer required.") always restate
+the task/event's own action phrase verbatim as X. So instead of trying to
+canonicalise both sides into a symmetric key (fragile -- the *original*
+message that created the item can be phrased however a human phrased it),
+we do a one-sided match: pull the clean phrase X out of the update
+message with a regex template, then find the EARLIEST previously-seen
+item whose own description/title CONTAINS X as a substring. That is a
+reliable join because X is, by construction, copied from the original.
+
+Never invents a link: if no template matches, or the matched phrase is
+too short/generic to search safely, or no earlier item contains it,
+callers get None back and must not guess.
+"""
+from __future__ import annotations
+
+import re
+from datetime import datetime
+from extract import _resolve_date, _resolve_time
+
+# Leading noise that can stack in front of any template ("Follow-up:",
+# "Additional update:") -- stripped repeatedly before template matching.
+_LEADING_NOISE = re.compile(r"^(?:follow-up|additional update)\s*:\s*", re.IGNORECASE)
+
+
+def _strip_leading_noise(text: str) -> str:
+    while True:
+        new = _LEADING_NOISE.sub("", text, count=1).strip()
+        if new == text:
+            return text
+        text = new
+
+
+# Each template: (update_type, compiled regex). Regex must expose named
+# groups: "subject" (required) and optionally "when" (raw date/time text,
+# resolved later via extract.py's own date/time parsers -- never
+# reimplemented here).
+_TEMPLATES = [
+    ("completed", re.compile(
+        r"^(?:update|confirmed):?\s*(?P<subject>.+?)\s+has been completed successfully\.?\s*$", re.I)),
+    ("completed", re.compile(
+        r"^confirmed:\s*(?P<subject>.+?)\s+has been completed\.?\s*$", re.I)),
+    ("cancelled", re.compile(
+        r"^you can cancel\s+(?P<subject>.+?);\s*it is no longer required\.?\s*$", re.I)),
+    ("cancelled", re.compile(
+        r"^cancel\s+(?P<subject>.+?);\s*it is no longer needed\.?\s*$", re.I)),
+    ("cancelled", re.compile(
+        r"^the\s+(?P<subject>.+?)\s+has been cancelled\.?\s*$", re.I)),
+    ("deadline_changed", re.compile(
+        r"^the deadline to\s+(?P<subject>.+?)\s+is now\s+(?P<when>.+?)"
+        r"(?:,\s*earlier than previously planned)?\.\s*"
+        r"(?:treat this as urgent\.?|this is urgent\.?)?\s*$", re.I)),
+    ("deadline_changed", re.compile(
+        r"^the deadline for\s+(?P<subject>.+?)\s+has been extended to\s+(?P<when>.+?)\.\s*$", re.I)),
+    ("conflicting_deadline", re.compile(
+        r"^please note that\s+(?P<subject>.+?)\s+is due on\s+(?P<when>.+?),\s*"
+        r"although the earlier message listed another date\.?\s*$", re.I)),
+    ("conflicting_deadline", re.compile(
+        r"^one message says .+?,\s*but the latest instruction says\s+"
+        r"(?P<subject>.+?)\s+is due on\s+(?P<when>.+?)\.\s*$", re.I)),
+    ("rescheduled", re.compile(
+        r"^the\s+(?P<subject>.+?)\s+has (?:been )?moved to\s+(?P<when>.+?)\.\s*"
+        r"(?:please use the new schedule\.?)?\s*$", re.I)),
+    ("rescheduled", re.compile(
+        r"^the date for\s+(?P<subject>.+?)\s+stays the same,\s*but the time is now\s+"
+        r"(?P<when>.+?)\.\s*$", re.I)),
+    ("status_check", re.compile(
+        r"^can you share an update on\s+(?P<subject>.+?)\?\s*$", re.I)),
+    ("status_check", re.compile(
+        r"^following up on\s+(?P<subject>.+?);\s*is it in progress\?\s*$", re.I)),
+    ("status_check", re.compile(
+        r"^please confirm whether you started to\s+(?P<subject>.+?)\.?\s*$", re.I)),
+    ("status_check", re.compile(
+        r"^any progress on the item concerning\s+(?P<subject>.+?)\?\s*$", re.I)),
+    ("status_check", re.compile(
+        r"^please check the latest status of\s+(?P<subject>.+?)\.?\s*$", re.I)),
+    ("status_check", re.compile(
+        r"^the work we discussed about\s+(?P<subject>.+?)\s+still needs attention\.?\s*$", re.I)),
+    ("status_check", re.compile(
+        r"^has the\s+(?P<subject>.+?)\s+item been handled yet\??\s*$", re.I)),
+    ("status_check", re.compile(
+        r"^i am referring to our earlier request about\s+(?P<subject>.+?)\.?\s*$", re.I)),
+    ("status_check", re.compile(
+        r"^this is another status request about\s+(?P<subject>.+?),\s*not a new task\.?\s*$", re.I)),
+    ("ambiguous", re.compile(
+        r"^(?P<subject>.+?)\s+might already be (?:done|finished)\b.*$", re.I)),
+    ("ambiguous", re.compile(
+        r"^we may move\s+(?P<subject>.+?);.*$", re.I)),
+    ("ambiguous", re.compile(
+        r"^the deadline could be .+$", re.I)),  # no reliable subject -- left unresolved by design
+    ("ambiguous", re.compile(
+        r"^the deadline may be .+$", re.I)),  # e.g. "...may be Monday, or it may be Wednesday..."
+    ("ambiguous", re.compile(
+        r"^.+ said someone probably handled (?P<subject>the task)\.?\s*$", re.I)),
+    ("ambiguous", re.compile(
+        r"^this may no longer be urgent\.?\s*$", re.I)),  # no reliable subject
+]
+
+# Explicit urgency language on the update message itself.
+_URGENT_RE = re.compile(r"\b(urgent|asap|immediately|treat this as urgent|this is urgent)\b", re.I)
+
+_MIN_SUBJECT_LEN = 6  # shorter/generic phrases are not searched -- avoids false links
+
+
+def normalize_subject(phrase: str) -> str:
+    """lowercase, strip leading article, strip trailing punctuation/whitespace."""
+    p = phrase.strip().lower()
+    p = re.sub(r"^(the|a|an)\s+", "", p)
+    p = re.sub(r"[.,;:!?]+$", "", p).strip()
+    return p
+
+
+def detect_status_update(message: str) -> dict | None:
+    """Match `message` against known status-change/status-check templates.
+
+    Returns None if nothing matches. Otherwise returns:
+        {update_type, subject_raw, subject_norm, when_raw, urgent}
+    `subject_norm` is None if the matched phrase is too short/generic to
+    safely search for (caller must not attempt a link in that case).
+    """
+    text = _strip_leading_noise(message.strip())
+    for update_type, regex in _TEMPLATES:
+        m = regex.match(text)
+        if not m:
+            continue
+        groups = m.groupdict()
+        subject_raw = groups.get("subject")
+        when_raw = groups.get("when")
+        subject_norm = None
+        if subject_raw:
+            norm = normalize_subject(subject_raw)
+            if len(norm) >= _MIN_SUBJECT_LEN:
+                subject_norm = norm
+        return {
+            "update_type": update_type,
+            "subject_raw": subject_raw,
+            "subject_norm": subject_norm,
+            "when_raw": when_raw,
+            "urgent": bool(_URGENT_RE.search(message)),
+        }
+    return None
+
+
+def resolve_when(when_raw: str, msg_date: datetime):
+    """Resolve a captured date/time phrase using extract.py's own explicit-only
+    parsers (never guesses) -- returns (deadline_iso_or_None, time_or_None)."""
+    if not when_raw:
+        return None, None
+    return _resolve_date(when_raw, msg_date), _resolve_time(when_raw)
+
+
+class SubjectRegistry:
+    """Chronological registry of items, searchable by substring containment.
+
+    `find()` always returns the EARLIEST-registered item whose description
+    contains the query phrase -- that's the "original" task/event.
+    """
+
+    def __init__(self):
+        self._order = []            # item_ids in registration order
+        self._descriptions = {}     # item_id -> lowercased description
+        self._state = {}            # item_id -> mutable state dict
+
+    def register(self, item_id: str, description: str, base_state: dict):
+        if item_id in self._descriptions:
+            return
+        self._order.append(item_id)
+        self._descriptions[item_id] = description.lower()
+        self._state[item_id] = dict(base_state)
+
+    def find(self, subject_norm: str):
+        if not subject_norm:
+            return None
+        for item_id in self._order:
+            if subject_norm in self._descriptions[item_id]:
+                return item_id
+        return None
+
+    def state_for(self, item_id: str) -> dict:
+        return self._state.get(item_id, {})
+
+    def apply_update(self, item_id: str, update: dict, msg_date: datetime):
+        state = self._state.setdefault(item_id, {})
+        utype = update["update_type"]
+        state["reopened"] = False
+        # A new deadline/reschedule/conflict is more specific and more recent
+        # than a prior "completed"/"cancelled" claim -- it contradicts that
+        # claim, so treat the item as active again rather than trusting stale
+        # status over fresh information.
+        if utype in {"rescheduled", "deadline_changed", "conflicting_deadline"} and \
+                state.get("status") in {"completed", "cancelled"}:
+            state["status"] = "pending"
+            state["reopened"] = True
+        if utype == "completed":
+            state["status"] = "completed"
+        elif utype == "cancelled":
+            state["status"] = "cancelled"
+        elif utype == "rescheduled":
+            state["status"] = "rescheduled"
+            new_deadline, new_time = resolve_when(update["when_raw"], msg_date)
+            if new_deadline:
+                state["deadline"] = new_deadline
+            if new_time:
+                state["time"] = new_time
+        elif utype == "deadline_changed":
+            new_deadline, new_time = resolve_when(update["when_raw"], msg_date)
+            old_deadline = state.get("deadline")
+            state["deadline_direction"] = None
+            if new_deadline and old_deadline:
+                state["deadline_direction"] = "earlier" if new_deadline < old_deadline else "later"
+            if new_deadline:
+                state["deadline"] = new_deadline
+            if new_time:
+                state["time"] = new_time
+            state["urgent"] = update["urgent"]
+        elif utype == "conflicting_deadline":
+            new_deadline, _ = resolve_when(update["when_raw"], msg_date)
+            if new_deadline:
+                state["deadline"] = new_deadline
+            state["last_conflicting"] = True
+        if utype != "conflicting_deadline":
+            state["last_conflicting"] = False
+        state["last_update_type"] = utype
+        state["mention_count"] = state.get("mention_count", 0) + 1
+        return state

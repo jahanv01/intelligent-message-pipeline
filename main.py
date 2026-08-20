@@ -32,6 +32,7 @@ import pandas as pd
 
 from classify import classify_message
 from extract import extract_item
+from priority import compute_priorities
 
 
 def setup_logging(verbose: bool = False) -> logging.Logger:
@@ -112,12 +113,17 @@ def parse_msg_date(raw_ts, logger=None) -> datetime:
         return datetime.now()
 
 
-def run(input_path: str, mandatory_path: Optional[str], verbose: bool = False):
+def run(input_path: str, mandatory_path: Optional[str], verbose: bool = False, extra_inputs=None):
     logger = setup_logging(verbose=verbose)
     start = time.time()
     logger.info("=== Pipeline run started ===")
 
     df = load_messages(input_path, logger)
+    for extra_path in (extra_inputs or []):
+        # L2 batches (e.g. l2_messages.csv, then l2_demo_messages.csv) are
+        # appended and re-sorted below -- "process L2 after L1" is guaranteed
+        # by the chronological sort, not by argument order.
+        df = pd.concat([df, load_messages(extra_path, logger)], ignore_index=True)
 
     if "timestamp" in [c.lower() for c in df.columns]:
         ts_col = [c for c in df.columns if c.lower() == "timestamp"][0]
@@ -131,6 +137,7 @@ def run(input_path: str, mandatory_path: Optional[str], verbose: bool = False):
     extracted_items = []
     sensitive_findings = []
     row_errors = []  # (message_id, error) — so failures are diagnosable, not silent
+    messages = []    # chronological {message_id, timestamp, sender, message} for priority.py
 
     for idx, row in df.iterrows():
         mid = str(row.get("message_id", row.get("Message ID", f"UNKNOWN_ROW_{idx}")))
@@ -139,6 +146,7 @@ def run(input_path: str, mandatory_path: Optional[str], verbose: bool = False):
             sender = str(row.get("sender", row.get("Sender", "")))
             raw_ts = row.get("timestamp", row.get("Timestamp", None))
             msg_date = parse_msg_date(raw_ts, logger)
+            messages.append({"message_id": mid, "timestamp": msg_date, "sender": sender, "message": message})
 
             cls_result, sens_hits = classify_message(mid, message)
             classifications.append(cls_result)
@@ -160,6 +168,12 @@ def run(input_path: str, mandatory_path: Optional[str], verbose: bool = False):
             logger.error(f"Row failed: message_id={mid} | error={e}")
             row_errors.append({"message_id": mid, "error": str(e)})
 
+    # reference "now" for deadline proximity/overdue = last processed message's
+    # own timestamp, not wall-clock time — this is a historical/fictional
+    # dataset, so datetime.now() would misjudge every deadline (see README).
+    reference_dt = max((m["timestamp"] for m in messages), default=None)
+    priorities = compute_priorities(messages, classifications, extracted_items, sensitive_findings, reference_dt)
+
     os.makedirs("results", exist_ok=True)
     with open("results/output_classifications.json", "w") as f:
         json.dump(classifications, f, indent=2)
@@ -167,6 +181,8 @@ def run(input_path: str, mandatory_path: Optional[str], verbose: bool = False):
         json.dump(extracted_items, f, indent=2)
     with open("results/output_sensitive_findings.json", "w") as f:
         json.dump(sensitive_findings, f, indent=2)
+    with open("results/output_priorities.json", "w") as f:
+        json.dump(priorities, f, indent=2)
     if row_errors:
         with open("results/output_row_errors.json", "w") as f:
             json.dump(row_errors, f, indent=2)
@@ -176,6 +192,8 @@ def run(input_path: str, mandatory_path: Optional[str], verbose: bool = False):
     logger.info(f"Classifications written: {len(classifications)} -> results/output_classifications.json")
     logger.info(f"Extracted tasks/events:  {len(extracted_items)} -> results/output_extracted_items.json")
     logger.info(f"Sensitive findings:      {len(sensitive_findings)} -> results/output_sensitive_findings.json")
+    logger.info(f"Priority decisions:      {len(priorities)} -> results/output_priorities.json "
+                f"(reference time: {reference_dt})")
     if row_errors:
         logger.warning(f"{len(row_errors)} row(s) failed — see results/output_row_errors.json and logs/run.log")
 
@@ -197,6 +215,7 @@ def run(input_path: str, mandatory_path: Optional[str], verbose: bool = False):
         "classifications": classifications,
         "extracted_items": extracted_items,
         "sensitive_findings": sensitive_findings,
+        "priorities": priorities,
         "row_errors": row_errors,
     }
 
@@ -204,8 +223,12 @@ def run(input_path: str, mandatory_path: Optional[str], verbose: bool = False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True, help="path to messages file (.xls/.xlsx/.csv)")
+    parser.add_argument("--extra-input", nargs="*", default=[],
+                         help="additional message file(s) to process after --input, e.g. the L2 "
+                              "batch and/or the L2 demo batch. Always re-sorted chronologically "
+                              "with --input, so pass them in any order.")
     parser.add_argument("--mandatory", required=False, help="path to mandatory_demo_ids file")
     parser.add_argument("--verbose", action="store_true",
                          help="enable DEBUG logging to logs/debug.log (may contain raw message text — local use only)")
     args = parser.parse_args()
-    run(args.input, args.mandatory, verbose=args.verbose)
+    run(args.input, args.mandatory, verbose=args.verbose, extra_inputs=args.extra_input)
