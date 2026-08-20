@@ -71,12 +71,20 @@ _MIN_MESSAGE_LEN = 12  # very short messages ("Yes." "Sure.") are never searched
 
 
 def _status_for(state) -> str:
+    # Checked FIRST, before any terminal status: if the most recent thing
+    # said about this subject was uncertain ("might already be done", "we
+    # may move this"), that casts doubt on whatever came before it --
+    # including a prior completed/cancelled/rescheduled claim. Reporting the
+    # stale definitive status instead would assert false confidence; "still
+    # cancelled as of the last confirmed word" is not what "Cancelled" reads
+    # as to someone querying group status. Bug found via manual audit: this
+    # previously ran AFTER the terminal check, so any ambiguous update to an
+    # already-rescheduled event silently never showed as Unclear.
+    if state.get("last_update_type") == "ambiguous":
+        return "Unclear"
     internal = state.get("status", "pending")
     if internal in _STATUS_MAP_TERMINAL:
         return _STATUS_MAP_TERMINAL[internal]
-    # internal == "pending"
-    if state.get("last_update_type") == "ambiguous":
-        return "Unclear"
     if len(state.get("mentions", [])) > 1:
         return "In progress"
     return "Pending"
@@ -201,11 +209,18 @@ def compute_groups(messages, extracted_items, min_group_size: int = MIN_GROUP_SI
             continue
         seq += 1
         item_type = state.get("type")
+        # related_item_ids[0] is always the canonical id; any further ids are
+        # "shadow" items -- extract.py independently created its OWN item for
+        # one of this group's messages (its phrasing matched a keyword, e.g.
+        # "review"), but the message actually resolved here instead via a
+        # more specific status-change template. Both ids describe the same
+        # real task/event -- see annotate_superseded() and the README.
+        related_item_ids = [item_id] + sorted(state.get("superseded_item_ids", []))
         groups.append({
             "group_id": f"GROUP_{seq:03d}",
             "title": _title_for(item_id, state, items_by_id),
             "related_message_ids": list(mentions),
-            "related_item_ids": [item_id],
+            "related_item_ids": related_item_ids,
             "summary": _summarize(item_type, state.get("history", [])),
             "status": _status_for(state),
             "latest_deadline": state.get("deadline"),
@@ -213,3 +228,22 @@ def compute_groups(messages, extracted_items, min_group_size: int = MIN_GROUP_SI
         })
 
     return groups
+
+
+def annotate_superseded(extracted_items, groups):
+    """Mark every extracted item that's a duplicate-in-spirit of a group's
+    canonical item with `superseded_by` = the canonical item_id (None for
+    canonical/standalone items). Mutates and returns `extracted_items` --
+    call this before writing output_extracted_items.json so a consumer
+    reading that file ALONE (without cross-referencing output_groups.json)
+    can still tell these apart from genuinely distinct tasks/events."""
+    canonical_of = {}
+    for g in groups:
+        ids = g["related_item_ids"]
+        if len(ids) > 1:
+            canonical = ids[0]
+            for shadow_id in ids[1:]:
+                canonical_of[shadow_id] = canonical
+    for item in extracted_items:
+        item["superseded_by"] = canonical_of.get(item["item_id"])
+    return extracted_items

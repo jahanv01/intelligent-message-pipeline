@@ -33,7 +33,7 @@ import pandas as pd
 from classify import classify_message
 from extract import extract_item
 from priority import compute_priorities
-from grouping import compute_groups
+from grouping import compute_groups, annotate_superseded
 
 
 def setup_logging(verbose: bool = False) -> logging.Logger:
@@ -175,6 +175,7 @@ def run(input_path: str, mandatory_path: Optional[str], verbose: bool = False, e
     reference_dt = max((m["timestamp"] for m in messages), default=None)
     priorities = compute_priorities(messages, classifications, extracted_items, sensitive_findings, reference_dt)
     groups = compute_groups(messages, extracted_items)
+    annotate_superseded(extracted_items, groups)  # adds "superseded_by" -- see README
 
     os.makedirs("results", exist_ok=True)
     with open("results/output_classifications.json", "w") as f:

@@ -13,7 +13,7 @@ from classify import classify_message
 from extract import extract_item
 from sensitive import detect_sensitive
 from priority import compute_priorities
-from grouping import compute_groups
+from grouping import compute_groups, annotate_superseded
 
 
 def _parse_ts(raw_ts) -> datetime:
@@ -68,6 +68,7 @@ def _run_pipeline(df: pd.DataFrame):
 
     priorities = compute_priorities(messages, classifications, extracted, sensitive_findings)
     groups = compute_groups(messages, extracted)
+    annotate_superseded(extracted, groups)
     return classifications, extracted, sensitive_findings, priorities, groups
 
 

@@ -4,7 +4,7 @@ from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from extract import extract_item
-from grouping import compute_groups
+from grouping import compute_groups, annotate_superseded
 
 
 def _build(rows):
@@ -34,7 +34,12 @@ def test_full_lifecycle_chain_forms_one_group_matching_spec_shape():
                 "summary", "status", "latest_deadline", "confidence"):
         assert key in g
     assert g["related_message_ids"] == ["MSG_1", "MSG_2", "MSG_3", "MSG_4"]
-    assert g["related_item_ids"] == [items[0]["item_id"]]
+    # Every follow-up here also independently contains "submit", so extract.py
+    # spawned its own item per message -- all 4 are the SAME real task, and
+    # related_item_ids must surface all of them (spec says "Related task or
+    # event IDs", plural), canonical first.
+    assert g["related_item_ids"][0] == items[0]["item_id"]
+    assert set(g["related_item_ids"]) == {i["item_id"] for i in items}
     assert g["status"] == "Completed"
     assert g["latest_deadline"] == "2026-09-10"
     assert 0.0 <= g["confidence"] <= 1.0
@@ -90,6 +95,20 @@ def test_status_unclear_on_ambiguous_update():
     assert groups[0]["status"] == "Unclear"
 
 
+def test_status_unclear_overrides_a_prior_rescheduled_status():
+    """Regression: an ambiguous mention AFTER a rescheduled event must show
+    Unclear, not silently stay Rescheduled -- caught via manual audit of
+    GROUP_006 (internship orientation) in the real dataset."""
+    rows = [
+        ("MSG_1", datetime(2026, 9, 1), "Mentor", "A new architecture-review session is scheduled for 2026-09-10 at 09:00."),
+        ("MSG_2", datetime(2026, 9, 3), "Mentor", "The architecture-review has been moved to 2026-09-15 at 10:00. Please use the new schedule."),
+        ("MSG_3", datetime(2026, 9, 5), "Kabir", "We may move the architecture-review; I will confirm later."),
+    ]
+    messages, items = _build(rows)
+    groups = compute_groups(messages, items)
+    assert groups[0]["status"] == "Unclear"
+
+
 def test_title_derived_for_ref_only_group_with_no_formal_item():
     """First mention of a subject can be a template match with no item of
     its own (extract.py's keywords never fire on it) -- group should still
@@ -124,6 +143,29 @@ def test_default_config_never_merges_different_subjects_sharing_a_template():
     all_related = [set(g["related_message_ids"]) for g in groups]
     assert {"MSG_1", "MSG_2"} in all_related
     assert {"MSG_3", "MSG_4"} in all_related
+
+
+def test_annotate_superseded_marks_shadow_items_not_canonical():
+    rows = [
+        ("MSG_1", datetime(2026, 9, 1), "Ram", "Please submit the report by 2026-09-10"),
+        ("MSG_2", datetime(2026, 9, 3), "Priya", "Following up on submit the report; is it in progress?"),
+    ]
+    messages, items = _build(rows)
+    groups = compute_groups(messages, items)
+    annotate_superseded(items, groups)
+    by_id = {i["item_id"]: i for i in items}
+    canonical_id = groups[0]["related_item_ids"][0]
+    shadow_id = groups[0]["related_item_ids"][1]
+    assert by_id[canonical_id]["superseded_by"] is None
+    assert by_id[shadow_id]["superseded_by"] == canonical_id
+
+
+def test_annotate_superseded_leaves_standalone_items_untouched():
+    rows = [("MSG_1", datetime(2026, 9, 1), "Ram", "Please submit the report by 2026-09-10")]
+    messages, items = _build(rows)
+    groups = compute_groups(messages, items)  # below min_group_size -> no groups
+    annotate_superseded(items, groups)
+    assert items[0]["superseded_by"] is None
 
 
 def test_confidence_lower_for_ref_only_group_than_formal_item_group():

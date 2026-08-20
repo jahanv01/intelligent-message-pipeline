@@ -147,7 +147,7 @@ pip install -r requirements-dev.txt   # only needed once
 pytest tests/ -v
 ```
 
-68 tests cover classification, extraction, sensitive detection, pipeline integration, timestamp parsing, message linking, priority scoring, and related-message grouping. All tests use fabricated example messages — the real dataset is never used in tests.
+71 tests cover classification, extraction, sensitive detection, pipeline integration, timestamp parsing, message linking, priority scoring, and related-message grouping. All tests use fabricated example messages — the real dataset is never used in tests.
 
 ---
 
@@ -173,7 +173,7 @@ intelligent-message-pipeline/
 │   ├── part1b_priority_l2.py
 │   ├── part2_extraction.py
 │   └── part3_sensitive.py
-└── tests/                   ← pytest test suite (68 tests)
+└── tests/                   ← pytest test suite (71 tests)
 ```
 
 ---
@@ -267,7 +267,7 @@ Run order is enforced by `main.py --extra-input` re-sorting on timestamp (not by
 
 ### How related messages are linked (without a separate "grouping" pass yet)
 
-L1's original titles are free-text sentences a human could have phrased any way. L2's status-update messages, by contrast, are template-generated and always **restate the task/event's own action phrase verbatim** ("Update: **review the privacy checklist** has been completed successfully."). So instead of canonicalising both sides into a symmetric key (fragile), `linking.py` does a one-sided match: pull the clean phrase out of the *update* message with a regex template, then find the **earliest** previously-registered item whose own description contains that phrase as a substring. Phrases shorter than 6 characters are never searched (avoids matching on generic words like "it"). This is the same primitive L2 Part 2 (related-message grouping) will build its groups on — it is not duplicated there.
+L1's original titles are free-text sentences a human could have phrased any way. L2's status-update messages, by contrast, are template-generated and always **restate the task/event's own action phrase verbatim** ("Update: **review the privacy checklist** has been completed successfully."). So instead of canonicalising both sides into a symmetric key (fragile), `linking.py` does a one-sided match: pull the clean phrase out of the *update* message with a regex template, then find the **earliest** previously-registered item whose own description contains that phrase as a substring. Phrases shorter than 6 characters are never searched (avoids matching on generic words like "it"). This is the same primitive L2 Part 2 (related-message grouping, below) builds its groups on via `linking.resolve_messages()` — it is not duplicated there.
 
 If a status-changing message (e.g. "Update: X has been completed") is the *first* mention of X — extract.py's keyword list never turned it into a formal item — it still gets linked: a lightweight `REF_<message_id>` reference is registered from that first mention so later messages about the same X can still be found. This is visibly distinct from a real `TASK_/EVENT_` id in the output, on purpose — it's a transparent flag that the underlying item extraction has a gap, not a silent guess.
 
@@ -356,6 +356,15 @@ linking.resolve_messages(messages, extracted_items)
 **"Must consider message meaning, not just a common word":** the template layer itself is what does this — a match requires the full distinguishing action phrase to appear (e.g. "review the security audit report"), not one shared word. Verified directly with a regression test (`test_default_config_never_merges_different_subjects_sharing_a_template`): two different tasks phrased with the identical template ("confirm the **interview** slot" vs. "confirm the **delivery** slot") stay in separate groups.
 
 **An embedding-based fallback was built and rejected, on purpose.** For messages that match no template at all but are clearly about a known subject in meaning (the spec's own example, "Reminder — the report is due tomorrow," wouldn't hit any fixed template), `grouping.py` has a `_link_semantic_mentions()` function using the same fastembed model, gated **off by default**. It was tested against held-out same-subject and different-subject message pairs before being trusted, the same discipline used for Part 1's semantic urgency signal — and it failed that test: adversarial pairs sharing a phrasing template but referring to different subjects scored 0.40–0.65 similarity, and 3 of 5 of those scored *higher* than genuine same-subject pairs (0.32–0.55). MiniLM's embedding is picking up sentence structure more than the specific entity discussed, and no threshold cleanly separates the two distributions. Shipping it would produce exactly the false grouping the assignment prohibits, so it stays disabled — a real example of "we do not build features just because the tool exists," proven with numbers, not asserted.
+
+### Self-QA pass on the real dataset — two real bugs found and fixed by reading the actual output
+
+Before calling Part 2 done, every one of the 32 groups produced from the real 1104-message run was read message-by-message (not spot-checked), and every one of the 490 items that *didn't* end up in a group was scanned for near-duplicate text against every other standalone item, looking specifically for the two failure modes that matter most here: messages wrongly grouped together, and messages that should have been grouped but weren't. Two real, non-cosmetic issues came out of that pass:
+
+1. **16.1% of extracted items (84 of 521) were silent duplicates, and `related_item_ids` was hiding it.** `extract.py` runs independently per message — if a follow-up message's own wording happens to hit an extraction keyword (e.g. "please **confirm** whether you started to review the privacy checklist" contains "confirm"), it gets its *own* item_id even though `linking.py` correctly resolves that same message to the *original* subject for grouping and priority purposes. The result: `output_extracted_items.json` on its own looks like it has more distinct tasks than actually exist, and a consumer reading it in isolation (exactly what Part 3 is asked to do — "L1 message classifications, extracted tasks and events" as one of its knowledge sources) would silently overcount. **Fix:** `linking.SubjectRegistry` now tracks `superseded_item_ids` per subject; `related_item_ids` surfaces *all* of them (canonical first — matching the spec's own plural "Related task or event IDs" naming, which a single-id-per-group design was under-serving), and a new `annotate_superseded()` step adds a `superseded_by` field directly onto `output_extracted_items.json` so the gap is closed at the source file too, not only in `output_groups.json`. Covered by 2 new tests.
+2. **A later ambiguous mention after a `Rescheduled`/`Completed`/`Cancelled` status was being silently ignored.** `_status_for()` checked terminal statuses *before* checking whether the most recent event was an ambiguous one, so a group that was rescheduled and then genuinely thrown into doubt by a later "we may move this again, I'll confirm" message kept reporting `Rescheduled` — asserting a confidence the evidence no longer supported. Found via the manual read-through (`GROUP_006`, the internship orientation thread, ending on `DEMO_017`'s ambiguous mention). **Fix:** the ambiguous check now runs first, unconditionally — the most recent word on a subject gets the final say over status, consistent with how `priority.py` already treats `ambiguous_status` as a confidence penalty rather than a fact. Covered by 1 new regression test.
+
+**What the audit did *not* find, which matters as much as what it did:** scanning all 490 standalone items for near-duplicate phrasing (e.g. two "Are you available for the technical interview...?" messages at different times) surfaced dozens of superficially similar candidates — and correctly grouped none of them, because none actually reference each other (no "moved to"/"is now due" language connecting them — they're independent synthetic messages that happen to share a template). That's the deterministic design working as intended, not a gap: grouping only two messages because they resemble each other in surface form is exactly the failure mode the assignment prohibits, and the audit is the evidence that it isn't happening.
 
 ---
 

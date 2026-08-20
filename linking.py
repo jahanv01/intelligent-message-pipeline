@@ -186,7 +186,21 @@ class SubjectRegistry:
         state["mentions"] = [origin_message_id] if origin_message_id else []
         state["history"] = [{"message_id": origin_message_id, "event": "created"}] if origin_message_id else []
         state["first_seen_order"] = position if position is not None else len(self._order) - 1
+        state.setdefault("superseded_item_ids", [])
         self._state[item_id] = state
+
+    def add_superseded(self, canonical_item_id: str, shadow_item_id: str):
+        """Record that `shadow_item_id` (extract.py independently created its
+        own item for this message) is a duplicate-in-spirit of
+        `canonical_item_id` -- the message actually resolved there instead,
+        via a status-change/status-check template. Both ids describe the
+        SAME real-world task/event; grouping.py surfaces this so
+        `related_item_ids` and output_extracted_items.json's `superseded_by`
+        aren't silently missing 1 in 6 of the items behind a busy subject."""
+        state = self._state.setdefault(canonical_item_id, {})
+        ids = state.setdefault("superseded_item_ids", [])
+        if shadow_item_id not in ids and shadow_item_id != canonical_item_id:
+            ids.append(shadow_item_id)
 
     def find(self, subject_norm: str):
         if not subject_norm:
@@ -317,6 +331,8 @@ def resolve_messages(messages, extracted_items):
                 registry.apply_update(found_item_id, update, m["timestamp"], message_id=mid)
                 resolved_item_id = found_item_id
                 is_restatement = item is not None  # item also exists but we deliberately don't use it
+                if is_restatement:
+                    registry.add_superseded(found_item_id, item["item_id"])
                 link_type = "template"
             elif item:
                 # NOTE: no origin_message_id here -- apply_update() below
