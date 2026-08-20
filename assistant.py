@@ -197,13 +197,24 @@ _INTENT_RULES = [
     ("blocked_messages", re.compile(r"\bblock", re.I)),
     ("requires_confirmation", re.compile(r"\bconfirm", re.I)),
     ("why_critical", re.compile(r"\bwhy\b.*\b(critical|priority)\b", re.I)),
-    ("became_critical", re.compile(r"\b(became|become|turn(ed)? into)\b.*\bcritical\b|\bwhich\b.*\bcritical\b", re.I)),
+    # NOTE: deliberately narrow -- an earlier version also matched any
+    # "which...critical..." question (via a `\bwhich\b.*\bcritical\b`
+    # fallback), which silently swallowed the spec's OWN example query
+    # ("Which critical or high-priority tasks are still pending?") before
+    # it ever reached high_priority_pending. Found by testing the exact
+    # spec wording, not a paraphrase -- caught before submission.
+    ("became_critical", re.compile(r"\b(became|become|turn(ed)? into)\b.*\bcritical\b", re.I)),
     ("conflicting", re.compile(r"\bconflict", re.I)),
     ("deadlines_changed", re.compile(r"\bdeadline", re.I)),
     ("rescheduled", re.compile(r"reschedul|\bmoved\b", re.I)),
-    ("completed_or_cancelled", re.compile(r"\bcomplet|\bcancel", re.I)),
-    ("high_priority_pending", re.compile(r"\b(critical|high[\s-]?priority)\b", re.I)),
+    # NOTE: requires the past-tense/status word "completed", not bare
+    # "complet..." -- that prefix also matched the verb in "What tasks
+    # should I complete today?", another spec example, misrouting it away
+    # from tasks_due_today. Also checked before tasks_due_today below as a
+    # second layer of defense.
     ("tasks_due_today", re.compile(r"\btoday\b", re.I)),
+    ("completed_or_cancelled", re.compile(r"\bcompleted\b|\bcancel", re.I)),
+    ("high_priority_pending", re.compile(r"\b(critical|high[\s-]?priority)\b", re.I)),
     ("latest_status", re.compile(r"\blatest status|\bcurrent status|\bstatus of\b", re.I)),
 ]
 
@@ -301,9 +312,10 @@ def _handle_why_critical(kb: KnowledgeBase, query: str):
             confidence=0.8 if method == "explicit_id" else min(0.8, score),
         )
     latest = critical_decisions[-1]
+    triggering_text = kb.masked_or_raw(latest["message_id"])  # original message where permitted, masked otherwise
     return _answer(
         query,
-        latest["reason"],
+        f"{latest['reason']} Triggering message ({latest['message_id']}): \"{triggering_text}\"",
         supporting_message_ids=[latest["message_id"]],
         related_item_ids=g["related_item_ids"],
         group_id=kb.public_group_of.get(g["related_item_ids"][0]),
@@ -463,9 +475,15 @@ def _handle_latest_status(kb: KnowledgeBase, query: str):
     when = g["latest_deadline"] or "no deadline recorded"
     if g.get("latest_time"):
         when += f" at {g['latest_time']}"
+    # "Original messages where permitted": the most recent message's own
+    # text (masked if it also carries a sensitive finding -- never raw)
+    # quoted directly, not just referenced by id.
+    latest_mid = g["related_message_ids"][-1]
+    latest_text = kb.masked_or_raw(latest_mid)
     return _answer(
         query,
-        f"'{g['title']}' is currently {g['status']} (latest deadline: {when}). {g['summary']}",
+        f"'{g['title']}' is currently {g['status']} (latest deadline: {when}). {g['summary']} "
+        f"Most recent message ({latest_mid}): \"{latest_text}\"",
         supporting_message_ids=g["related_message_ids"],
         related_item_ids=g["related_item_ids"],
         group_id=kb.public_group_of.get(g["related_item_ids"][0]),

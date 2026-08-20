@@ -132,6 +132,23 @@ def test_conflicting_deadlines_intent():
     assert "MSG_2" in ans["supporting_message_ids"]
 
 
+def test_exact_spec_wording_tasks_due_today_not_misrouted_to_completed():
+    """Regression: 'complete' as a bare verb in 'should I complete today'
+    was matching the completed/cancelled intent's old substring pattern
+    before ever reaching tasks_due_today. Found by testing the assignment's
+    own example wording verbatim, not a paraphrase."""
+    from assistant import _detect_intent
+    assert _detect_intent("What tasks should I complete today?") == "tasks_due_today"
+
+
+def test_exact_spec_wording_high_priority_pending_not_misrouted_to_became_critical():
+    """Regression: became_critical's old fallback pattern matched ANY
+    'which...critical...' question, silently swallowing the spec's own
+    example query for a completely different intent."""
+    from assistant import _detect_intent
+    assert _detect_intent("Which critical or high-priority tasks are still pending?") == "high_priority_pending"
+
+
 def test_no_answer_leaks_raw_sensitive_text():
     """A message with a sensitive finding must never have its raw text
     surfaced anywhere in an answer, even indirectly via masked_or_raw()."""
@@ -139,3 +156,19 @@ def test_no_answer_leaks_raw_sensitive_text():
     kb = _pipeline(rows)
     safe_text = kb.masked_or_raw("MSG_1")
     assert "552134" not in safe_text
+
+
+def test_latest_status_quotes_original_message_but_masks_sensitive_value():
+    """End-to-end: latest_status now quotes the most recent original message
+    as evidence ('original messages where permitted') -- if that message
+    also carries a sensitive finding, the quote must be masked, not raw."""
+    rows = [
+        ("MSG_1", datetime(2026, 9, 1), "Ram", "Please review the security token rotation by 2026-09-20"),
+        ("MSG_2", datetime(2026, 9, 5), "Ram",
+         "Follow-up: please confirm whether you started to review the security token rotation. "
+         "Use token tok_secret_998877 for the test."),
+    ]
+    kb = _pipeline(rows)
+    ans = answer_query(kb, "What is the latest status of MSG_1?")
+    assert "tok_secret_998877" not in ans["answer"]
+    assert "***" in ans["answer"] or "*" in ans["answer"]
