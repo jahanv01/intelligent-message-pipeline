@@ -22,6 +22,7 @@ Requires: sentence-transformers  (pip install sentence-transformers)
 Falls back to keyword heuristics if the library is not installed.
 """
 import re
+import threading
 import numpy as np
 from sensitive import detect_sensitive
 
@@ -249,11 +250,23 @@ DATE_TIME_SIGNAL = re.compile(
 )
 
 # ---------------------------------------------------------------------------
-# Embedding engine -- loaded once at import time
+# Embedding engine -- loaded in a BACKGROUND THREAD, not at import time.
+#
+# Downloading the ~90MB model and embedding ~85 anchor sentences takes
+# several seconds. Doing that synchronously at import means app.py's Gradio
+# server can't open its port until it finishes -- fine on a fast machine,
+# but on a CPU-starved free-tier host that delay can be long enough that the
+# platform's own health check decides the service is unresponsive and
+# restarts it, which then repeats the same slow load and never gets there.
+# Loading in the background lets the port open immediately; any request
+# that arrives before loading finishes transparently uses the keyword
+# fallback via the existing "_model is None" check in classify_message()
+# below -- no request-path code needs to know loading is still in progress.
 # ---------------------------------------------------------------------------
 _model = None
 _anchor_matrix = None   # shape: (n_subclasses, dim), rows pre-normalised
 _subclass_list = None
+_model_ready = threading.Event()  # tests: wait_for_model_ready() blocks on this
 
 
 def _load_model():
@@ -261,18 +274,24 @@ def _load_model():
     try:
         from fastembed import TextEmbedding
     except ImportError:
-        _model = None
+        _model_ready.set()
         return
     try:
-        _model = TextEmbedding("sentence-transformers/all-MiniLM-L6-v2")
-        _subclass_list = SUBCLASSES
+        model = TextEmbedding("sentence-transformers/all-MiniLM-L6-v2")
+        subclass_list = SUBCLASSES
         rows = []
-        for sc in _subclass_list:
-            vecs = np.array(list(_model.embed(sc["anchors"])))
+        for sc in subclass_list:
+            vecs = np.array(list(model.embed(sc["anchors"])))
             rows.append(vecs.mean(axis=0))
         mat = np.array(rows)
         norms = np.linalg.norm(mat, axis=1, keepdims=True)
-        _anchor_matrix = mat / np.clip(norms, 1e-10, None)
+        anchor_matrix = mat / np.clip(norms, 1e-10, None)
+        # Set _anchor_matrix/_subclass_list BEFORE _model -- classify_message()
+        # only checks "if _model is not None", so by the time that becomes
+        # true for any reader, the other two must already be fully populated.
+        _anchor_matrix = anchor_matrix
+        _subclass_list = subclass_list
+        _model = model
     except Exception as e:
         # The model download can fail transiently -- network hiccup, or a
         # Hugging Face Hub rate limit on unauthenticated requests. The free-
@@ -282,10 +301,20 @@ def _load_model():
         # down -- every downstream module already handles _model is None
         # gracefully; the only broken link was this exception escaping.
         print(f"[classify.py] fastembed model failed to load, falling back to keyword classifier: {e}")
-        _model = None
+    finally:
+        _model_ready.set()
 
 
-_load_model()
+def wait_for_model_ready(timeout=30):
+    """Block until the background model load finishes (or times out).
+    classify_message() itself never needs this -- it already falls back to
+    the keyword classifier transparently if the model isn't ready yet. Only
+    needed where deterministic, semantic-classifier-specific behavior is
+    required, e.g. tests (see tests/conftest.py)."""
+    return _model_ready.wait(timeout)
+
+
+threading.Thread(target=_load_model, daemon=True, name="classify-model-loader").start()
 
 
 def embed_texts(texts):

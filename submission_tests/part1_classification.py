@@ -8,7 +8,7 @@ import json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pandas as pd
-from classify import classify_message
+from classify import classify_message, wait_for_model_ready
 
 DATASET = "dataset/messages.csv"
 MANDATORY = "dataset/mandatory_demo_ids.csv"
@@ -17,6 +17,10 @@ RESULTS_FILE = "results/part1_mandatory_classifications.json"
 
 def run():
     os.makedirs("results", exist_ok=True)
+    # classify.py loads its model in a background thread (see classify.py) --
+    # this script calls classify_message() directly rather than through
+    # main.py, so it must wait for full semantic classification itself.
+    wait_for_model_ready(timeout=60)
 
     msgs = pd.read_csv(DATASET)
     ids = pd.read_csv(MANDATORY)["message_id"].tolist()

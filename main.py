@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Optional
 import pandas as pd
 
-from classify import classify_message
+from classify import classify_message, wait_for_model_ready
 from extract import extract_item
 from priority import compute_priorities
 from grouping import compute_groups, annotate_superseded
@@ -119,6 +119,16 @@ def run(input_path: str, mandatory_path: Optional[str], verbose: bool = False, e
     logger = setup_logging(verbose=verbose)
     start = time.time()
     logger.info("=== Pipeline run started ===")
+
+    # classify.py loads its embedding model in a background thread so
+    # app.py's web server can open its port immediately (see classify.py).
+    # This batch pipeline produces the actual submitted output files, so it
+    # must wait for full semantic classification here -- unlike a live web
+    # request, there's no user waiting on a fast first response to justify
+    # the keyword-fallback tradeoff.
+    if not wait_for_model_ready(timeout=60):
+        logger.warning("Embedding model did not finish loading within 60s -- "
+                        "classification will fall back to keyword matching.")
 
     df = load_messages(input_path, logger)
     for extra_path in (extra_inputs or []):
