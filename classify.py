@@ -260,6 +260,10 @@ def _load_model():
     global _model, _anchor_matrix, _subclass_list
     try:
         from fastembed import TextEmbedding
+    except ImportError:
+        _model = None
+        return
+    try:
         _model = TextEmbedding("sentence-transformers/all-MiniLM-L6-v2")
         _subclass_list = SUBCLASSES
         rows = []
@@ -269,7 +273,15 @@ def _load_model():
         mat = np.array(rows)
         norms = np.linalg.norm(mat, axis=1, keepdims=True)
         _anchor_matrix = mat / np.clip(norms, 1e-10, None)
-    except ImportError:
+    except Exception as e:
+        # The model download can fail transiently -- network hiccup, or a
+        # Hugging Face Hub rate limit on unauthenticated requests. The free-
+        # tier host has no persistent disk, so every restart re-downloads the
+        # ~90MB model, repeating this risk on every boot. A failure here must
+        # degrade to the keyword classifier below, never take the whole app
+        # down -- every downstream module already handles _model is None
+        # gracefully; the only broken link was this exception escaping.
+        print(f"[classify.py] fastembed model failed to load, falling back to keyword classifier: {e}")
         _model = None
 
 
