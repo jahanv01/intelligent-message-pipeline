@@ -30,8 +30,102 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import re
+
+import numpy as np
+
 from extract import PRIORITY_HIGH_SIGNALS
+from classify import embed_texts
 from linking import SubjectRegistry, detect_status_update, resolve_when
+
+# ---------------------------------------------------------------------------
+# Semantic urgency -- catches paraphrases the fixed PRIORITY_HIGH_SIGNALS
+# keyword list misses ("please expedite this", "time-sensitive, need this
+# today"). Reuses classify.py's already-loaded fastembed model (see
+# classify.embed_texts) rather than loading a second copy. Only consulted
+# when the keyword check found nothing -- it's a fallback that catches more
+# phrasings, not a second vote that double-counts the same concept.
+# ---------------------------------------------------------------------------
+_URGENT_ANCHORS = [
+    "This is extremely urgent and needs immediate attention.",
+    "Please treat this as a top priority right now.",
+    "We need this resolved without any delay.",
+    "This cannot wait -- please act on it today.",
+    "Dropping everything else, this takes precedence over all other work.",
+    "This is time-critical and must be actioned before end of day.",
+    "Escalating this -- it needs attention right now, not later.",
+    "High priority: this must be handled before anything else.",
+]
+_ROUTINE_ANCHORS = [
+    "This is a routine update, no rush at all.",
+    "Whenever you get a chance, no immediate action needed.",
+    "This can wait until next week, no hurry.",
+    "Just a general FYI, nothing time-sensitive here.",
+    "Take your time with this, there is no deadline pressure.",
+    "This is low priority and can be scheduled for later.",
+    "No particular urgency here, just sharing for awareness.",
+    "Feel free to get to this whenever convenient.",
+]
+# Empirically chosen (see tests/test_priority.py) -- margin: urgent-anchor
+# similarity minus routine-anchor similarity. Real margins on held-out
+# paraphrases top out around 0.19; 0.55 (an initial guess) never fired at
+# all. 0.12 sits above every observed routine false-positive margin (<=0.065)
+# while still catching most held-out urgent paraphrases -- conservative on
+# purpose, since a noisy signal here would itself be the "random priority"
+# behavior the assignment warns against.
+SEMANTIC_URGENCY_THRESHOLD = 0.12
+
+_urgent_matrix = None   # (n_anchors, dim), normalised
+_routine_matrix = None
+_semantic_urgency_available = None  # None = not yet attempted, True/False after first try
+
+
+def _ensure_urgency_anchors():
+    global _urgent_matrix, _routine_matrix, _semantic_urgency_available
+    if _semantic_urgency_available is not None:
+        return
+    urgent_vecs = embed_texts(_URGENT_ANCHORS)
+    if urgent_vecs is None:
+        _semantic_urgency_available = False
+        return
+    routine_vecs = embed_texts(_ROUTINE_ANCHORS)
+
+    def _normalise(mat):
+        norms = np.linalg.norm(mat, axis=1, keepdims=True)
+        return mat / np.clip(norms, 1e-10, None)
+
+    _urgent_matrix = _normalise(urgent_vecs)
+    _routine_matrix = _normalise(routine_vecs)
+    _semantic_urgency_available = True
+
+
+# Hedge/uncertainty language ("could be", "might", "probably"...) inverts
+# urgency regardless of topical similarity -- MiniLM's embedding does not
+# reliably capture that distinction (verified empirically: "The review could
+# be Friday afternoon" scored as urgent by margin alone). A deterministic
+# pre-filter catches what the embedding can't, the same reasoning sensitive.py
+# already applies to fixed-format secrets: use the right tool for the job.
+_HEDGE_RE = re.compile(
+    r"\b(could be|might|may|possibly|perhaps|probably|maybe|not sure|uncertain)\b", re.I,
+)
+
+
+def _semantic_urgency_hit(message: str) -> bool:
+    """True if `message` reads as semantically urgent -- similarity to the
+    urgent anchors clears the routine anchors by SEMANTIC_URGENCY_THRESHOLD.
+    False (never guessed True) if the embedding model isn't installed, or if
+    the message hedges (uncertainty language always overrides a topical
+    similarity match)."""
+    if _HEDGE_RE.search(message):
+        return False
+    _ensure_urgency_anchors()
+    if not _semantic_urgency_available:
+        return False
+    vec = embed_texts([message])[0]
+    vec = vec / max(np.linalg.norm(vec), 1e-10)
+    urgent_sim = float(np.max(_urgent_matrix.dot(vec)))
+    routine_sim = float(np.max(_routine_matrix.dot(vec)))
+    return (urgent_sim - routine_sim) >= SEMANTIC_URGENCY_THRESHOLD
 
 # ---------------------------------------------------------------------------
 # Tunable weights -- documented verbatim in README "How priority is calculated"
@@ -45,6 +139,7 @@ SIGNAL_WEIGHTS = {
     "deadline_future": 0,
     "no_deadline": 0,
     "urgent_language": 2,
+    "semantic_urgency": 1.5,
     "deadline_moved_earlier": 2,
     "deadline_moved_later": -1,
     "conflicting_deadline": 1,
@@ -84,6 +179,7 @@ _SIGNAL_TEXT = {
     "deadline_future": "the deadline is more than a week away",
     "no_deadline": "no explicit deadline is stated",
     "urgent_language": "the message uses explicit urgent language",
+    "semantic_urgency": "the message reads as urgent in meaning, even without an urgent keyword",
     "deadline_moved_earlier": "a later message moved the deadline earlier",
     "deadline_moved_later": "a later message pushed the deadline out",
     "conflicting_deadline": "two messages state different deadlines for the same item",
@@ -167,6 +263,9 @@ def _score(state, sender, message_text, sensitive_hit, reference_dt, is_restatem
     if urgent_now:
         score += SIGNAL_WEIGHTS["urgent_language"]
         signals.append("urgent_language")
+    elif _semantic_urgency_hit(message_text):
+        score += SIGNAL_WEIGHTS["semantic_urgency"]
+        signals.append("semantic_urgency")
 
     direction = state.get("deadline_direction")
     if direction == "earlier":
@@ -214,6 +313,8 @@ def _score(state, sender, message_text, sensitive_hit, reference_dt, is_restatem
         confidence += 0.10
     if category == "action_required":
         confidence += 0.05
+    if "semantic_urgency" in signals:
+        confidence += 0.05  # inferred, not literal -- smaller bump than an explicit keyword match
     if ambiguous:
         confidence -= 0.25
     if state.get("last_conflicting"):
