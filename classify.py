@@ -276,6 +276,18 @@ def _load_model():
 _load_model()
 
 
+def embed_texts(texts):
+    """Embed a list of strings with the SAME loaded fastembed model used for
+    classification (priority.py's semantic urgency check reuses this instead
+    of loading a second copy of the model -- the Render free-tier deployment
+    has 512MB total RAM, no room for two ~90MB models). Returns None if
+    fastembed isn't installed -- callers must fall back gracefully, never
+    guess a score from nothing."""
+    if _model is None:
+        return None
+    return np.array(list(_model.embed(texts)))
+
+
 def _cosine_classify(message: str):
     """Return (sub_class_dict, similarity_score)."""
     vec = np.array(list(_model.embed([message])))[0]

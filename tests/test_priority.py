@@ -158,6 +158,39 @@ def test_message_category_action_required_reinforces_signal():
     assert "category_action_required" in d["signals"]
 
 
+def test_semantic_urgency_catches_paraphrase_without_keyword():
+    """'expedite'/'cannot wait' aren't in PRIORITY_HIGH_SIGNALS -- only the
+    embedding fallback can catch this one."""
+    rows = [("MSG_1", datetime(2026, 9, 5), "Ram",
+              "Please submit the vendor invoice, it cannot wait any longer.")]
+    messages, items, sens = _build(rows)
+    decisions = compute_priorities(messages, [], items, sens)
+    d = _by_id(decisions, "MSG_1")
+    assert "semantic_urgency" in d["signals"]
+    assert "urgent_language" not in d["signals"]
+
+
+def test_semantic_urgency_does_not_fire_on_routine_message():
+    rows = [("MSG_1", datetime(2026, 9, 5), "Ram",
+              "Please review the document sometime this week, no rush at all.")]
+    messages, items, sens = _build(rows)
+    decisions = compute_priorities(messages, [], items, sens)
+    d = _by_id(decisions, "MSG_1")
+    assert "semantic_urgency" not in d["signals"]
+    assert "urgent_language" not in d["signals"]
+
+
+def test_explicit_keyword_urgency_skips_semantic_check():
+    """When the keyword hits, the semantic fallback shouldn't also fire and
+    double-count the same concept under two signal names."""
+    rows = [("MSG_1", datetime(2026, 9, 5), "Ram", "Please review the report, this is urgent.")]
+    messages, items, sens = _build(rows)
+    decisions = compute_priorities(messages, [], items, sens)
+    d = _by_id(decisions, "MSG_1")
+    assert "urgent_language" in d["signals"]
+    assert "semantic_urgency" not in d["signals"]
+
+
 def test_message_category_mismatch_lowers_confidence():
     """If classify.py independently thinks a message isn't actionable
     (promotional/general/personal) but something still tracked it as a
