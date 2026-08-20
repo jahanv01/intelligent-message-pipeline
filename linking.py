@@ -163,6 +163,12 @@ class SubjectRegistry:
 
     `find()` always returns the EARLIEST-registered item whose description
     contains the query phrase -- that's the "original" task/event.
+
+    Also tracks, per item_id: `mentions` (every message_id linked to it, in
+    order -- Part 2's related_message_ids) and `history` (a
+    {message_id, event} list -- Part 2's narrative summary source), and
+    `first_seen_order` (registration position -- lets Part 2's semantic
+    fallback only ever look backward in time, same rule as everything else).
     """
 
     def __init__(self):
@@ -170,12 +176,17 @@ class SubjectRegistry:
         self._descriptions = {}     # item_id -> lowercased description
         self._state = {}            # item_id -> mutable state dict
 
-    def register(self, item_id: str, description: str, base_state: dict):
+    def register(self, item_id: str, description: str, base_state: dict,
+                 origin_message_id: str = None, position: int = None):
         if item_id in self._descriptions:
             return
         self._order.append(item_id)
         self._descriptions[item_id] = description.lower()
-        self._state[item_id] = dict(base_state)
+        state = dict(base_state)
+        state["mentions"] = [origin_message_id] if origin_message_id else []
+        state["history"] = [{"message_id": origin_message_id, "event": "created"}] if origin_message_id else []
+        state["first_seen_order"] = position if position is not None else len(self._order) - 1
+        self._state[item_id] = state
 
     def find(self, subject_norm: str):
         if not subject_norm:
@@ -185,12 +196,30 @@ class SubjectRegistry:
                 return item_id
         return None
 
+    def all_item_ids(self):
+        return list(self._order)
+
+    def description_for(self, item_id: str) -> str:
+        return self._descriptions.get(item_id, "")
+
     def state_for(self, item_id: str) -> dict:
         return self._state.get(item_id, {})
 
-    def apply_update(self, item_id: str, update: dict, msg_date: datetime):
+    def add_mention(self, item_id: str, message_id: str, event: str = "mentioned"):
+        """Record a message as related to item_id WITHOUT applying any state
+        change -- used for semantic-fallback links (Part 2), where we know a
+        message is likely about this subject but not what kind of update (if
+        any) it represents, so status/deadline must not move."""
+        state = self._state.setdefault(item_id, {})
+        state.setdefault("mentions", []).append(message_id)
+        state.setdefault("history", []).append({"message_id": message_id, "event": event})
+
+    def apply_update(self, item_id: str, update: dict, msg_date: datetime, message_id: str = None):
         state = self._state.setdefault(item_id, {})
         utype = update["update_type"]
+        if message_id:
+            state.setdefault("mentions", []).append(message_id)
+            state.setdefault("history", []).append({"message_id": message_id, "event": utype})
         state["reopened"] = False
         # A new deadline/reschedule/conflict is more specific and more recent
         # than a prior "completed"/"cancelled" claim -- it contradicts that
@@ -232,3 +261,94 @@ class SubjectRegistry:
         state["last_update_type"] = utype
         state["mention_count"] = state.get("mention_count", 0) + 1
         return state
+
+
+def _base_state(item):
+    return {"sub_class": item["sub_class"], "type": item["type"],
+            "deadline": item["deadline"], "time": item["time"], "status": "pending"}
+
+
+def _mint_ref_id(message_id):
+    # A status-changing/status-check message can be the FIRST mention of a
+    # subject that extract.py never turned into a formal item (its phrasing
+    # doesn't hit any extraction keyword). Rather than silently dropping
+    # every later update about that subject, mint a lightweight reference id
+    # from this message so the chain still links up -- kept visually
+    # distinct (REF_ prefix) from real TASK_/EVENT_ ids so it's obvious in
+    # the output which subjects have no formal item behind them.
+    return f"REF_{message_id}"
+
+
+def resolve_messages(messages, extracted_items):
+    """
+    Single chronological pass shared by priority.py and grouping.py: for
+    every message, decide which item_id (if any) it belongs to, registering
+    new subjects and applying template-matched updates to a SubjectRegistry
+    as it goes. Both modules must see the SAME resolution -- if they each
+    ran their own version of this loop, they could quietly disagree about
+    which messages belong to the same subject.
+
+    Returns (registry, resolutions) where resolutions is a list of dicts,
+    one per message, in the same order as `messages`:
+        {message_id, item_id_or_None, is_restatement, update_or_None,
+         link_type}
+    link_type is "origin" (this message created the item), "template" (this
+    message matched a status-change/status-check template and resolved to
+    an existing subject), or None (unresolved by this deterministic pass --
+    priority.py stops here; grouping.py may still try a semantic fallback).
+    """
+    items_by_msg = {i["source_message_id"]: i for i in extracted_items}
+    registry = SubjectRegistry()
+    resolutions = []
+
+    for position, m in enumerate(messages):
+        mid = m["message_id"]
+        item = items_by_msg.get(mid)
+        update = detect_status_update(m["message"])
+
+        resolved_item_id = None
+        is_restatement = False
+        link_type = None
+
+        found_item_id = registry.find(update["subject_norm"]) if update and update["subject_norm"] else None
+
+        if update:
+            if found_item_id:
+                registry.apply_update(found_item_id, update, m["timestamp"], message_id=mid)
+                resolved_item_id = found_item_id
+                is_restatement = item is not None  # item also exists but we deliberately don't use it
+                link_type = "template"
+            elif item:
+                # NOTE: no origin_message_id here -- apply_update() below
+                # records this same message as the mention. Passing it to
+                # both would double-record mid in state["mentions"].
+                registry.register(item["item_id"], item["description"], _base_state(item),
+                                   position=position)
+                registry.apply_update(item["item_id"], update, m["timestamp"], message_id=mid)
+                resolved_item_id = item["item_id"]
+                link_type = "origin"
+            elif update["subject_norm"]:
+                ref_id = _mint_ref_id(mid)
+                registry.register(ref_id, m["message"], {
+                    "sub_class": None, "type": "reference", "deadline": None, "time": None, "status": "pending",
+                }, position=position)
+                registry.apply_update(ref_id, update, m["timestamp"], message_id=mid)
+                resolved_item_id = ref_id
+                link_type = "origin"
+            # else: no subject could be resolved at all -- deliberately not
+            # linked or invented (see README "Assumptions and limitations").
+        elif item:
+            registry.register(item["item_id"], item["description"], _base_state(item),
+                               origin_message_id=mid, position=position)
+            resolved_item_id = item["item_id"]
+            link_type = "origin"
+
+        resolutions.append({
+            "message_id": mid,
+            "item_id": resolved_item_id,
+            "is_restatement": is_restatement,
+            "update": update,
+            "link_type": link_type,
+        })
+
+    return registry, resolutions

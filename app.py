@@ -13,6 +13,7 @@ from classify import classify_message
 from extract import extract_item
 from sensitive import detect_sensitive
 from priority import compute_priorities
+from grouping import compute_groups
 
 
 def _parse_ts(raw_ts) -> datetime:
@@ -66,7 +67,8 @@ def _run_pipeline(df: pd.DataFrame):
             extracted.append(item)
 
     priorities = compute_priorities(messages, classifications, extracted, sensitive_findings)
-    return classifications, extracted, sensitive_findings, priorities
+    groups = compute_groups(messages, extracted)
+    return classifications, extracted, sensitive_findings, priorities, groups
 
 
 def _cls_table(classifications):
@@ -102,40 +104,52 @@ def _pri_table(priorities):
     return pd.DataFrame(rows, columns=["Message ID", "Item ID", "Priority", "Confidence", "Signals", "Reason"])
 
 
+def _grp_table(groups):
+    cols = ["Group ID", "Title", "Status", "Latest Deadline", "Confidence", "Related Messages", "Summary"]
+    if not groups:
+        return pd.DataFrame(columns=cols)
+    rows = [[g["group_id"], g["title"][:50], g["status"], g["latest_deadline"], g["confidence"],
+             ", ".join(g["related_message_ids"]), g["summary"]]
+            for g in groups]
+    return pd.DataFrame(rows, columns=cols)
+
+
 def run_demo(_):
     df = pd.DataFrame(SAMPLE_ROWS, columns=["message_id", "timestamp", "sender", "message"])
-    cls, ext, sens, pri = _run_pipeline(df)
+    cls, ext, sens, pri, grp = _run_pipeline(df)
     summary = (
         f"**Demo mode** — {len(cls)} fabricated sample messages processed\n\n"
         f"- Classified: {len(cls)}  |  Tasks/events extracted: {len(ext)}  |  "
-        f"Sensitive findings: {len(sens)}  |  Priority decisions: {len(pri)}"
+        f"Sensitive findings: {len(sens)}  |  Priority decisions: {len(pri)}  |  Groups: {len(grp)}\n\n"
+        f"> These 8 messages are independent fabricated examples, so no related-message "
+        f"groups are expected here — try the Upload tab with a real multi-message CSV to see grouping in action."
     )
-    return summary, _cls_table(cls), _ext_table(ext), _sens_table(sens), _pri_table(pri)
+    return summary, _cls_table(cls), _ext_table(ext), _sens_table(sens), _pri_table(pri), _grp_table(grp)
 
 
 def run_upload(file):
     if file is None:
-        return "Please upload a CSV file.", None, None, None, None
+        return "Please upload a CSV file.", None, None, None, None, None
     try:
         df = pd.read_csv(file)
     except Exception as e:
-        return f"Could not read file: {e}", None, None, None, None
+        return f"Could not read file: {e}", None, None, None, None, None
 
     required = {"message_id", "timestamp", "sender", "message"}
     missing = required - set(c.lower() for c in df.columns)
     if missing:
-        return f"Missing columns: {missing}. Required: message_id, timestamp, sender, message", None, None, None, None
+        return f"Missing columns: {missing}. Required: message_id, timestamp, sender, message", None, None, None, None, None
 
     df = df.sort_values("timestamp").reset_index(drop=True)
-    cls, ext, sens, pri = _run_pipeline(df)
+    cls, ext, sens, pri, grp = _run_pipeline(df)
 
     summary = (
         f"**Processed {len(df)} messages**\n\n"
         f"- Classified: {len(cls)}  |  Tasks/events extracted: {len(ext)}  |  "
-        f"Sensitive findings: {len(sens)}  |  Priority decisions: {len(pri)}\n\n"
+        f"Sensitive findings: {len(sens)}  |  Priority decisions: {len(pri)}  |  Groups: {len(grp)}\n\n"
         f"> Sensitive values are masked — raw values are never displayed."
     )
-    return summary, _cls_table(cls), _ext_table(ext), _sens_table(sens), _pri_table(pri)
+    return summary, _cls_table(cls), _ext_table(ext), _sens_table(sens), _pri_table(pri), _grp_table(grp)
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +170,9 @@ with gr.Blocks(title="Message Intelligence Pipeline") as demo:
         demo_ext  = gr.Dataframe(label="Part 2 — Extraction")
         demo_sens = gr.Dataframe(label="Part 3 — Sensitive Findings")
         demo_pri  = gr.Dataframe(label="L2 Part 1 — Priority")
-        demo_btn.click(run_demo, inputs=demo_btn, outputs=[demo_summary, demo_cls, demo_ext, demo_sens, demo_pri])
+        demo_grp  = gr.Dataframe(label="L2 Part 2 — Related-Message Groups")
+        demo_btn.click(run_demo, inputs=demo_btn,
+                        outputs=[demo_summary, demo_cls, demo_ext, demo_sens, demo_pri, demo_grp])
 
     with gr.Tab("Upload your CSV"):
         gr.Markdown(
@@ -170,7 +186,8 @@ with gr.Blocks(title="Message Intelligence Pipeline") as demo:
         upload_ext  = gr.Dataframe(label="Part 2 — Extraction")
         upload_sens = gr.Dataframe(label="Part 3 — Sensitive Findings")
         upload_pri  = gr.Dataframe(label="L2 Part 1 — Priority")
+        upload_grp  = gr.Dataframe(label="L2 Part 2 — Related-Message Groups")
         upload_btn.click(run_upload, inputs=file_input,
-                          outputs=[upload_summary, upload_cls, upload_ext, upload_sens, upload_pri])
+                          outputs=[upload_summary, upload_cls, upload_ext, upload_sens, upload_pri, upload_grp])
 
 demo.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)), ssr_mode=False)

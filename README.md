@@ -109,6 +109,7 @@ results/
   output_extracted_items.json      ← Part 2: extracted tasks and events
   output_sensitive_findings.json   ← Part 3: sensitive findings (values masked)
   output_priorities.json           ← L2 Part 1: priority decision per actionable message
+  output_groups.json               ← L2 Part 2: related-message groups
 ```
 
 The `results/` folder is git-ignored — outputs are never committed to the repo.
@@ -133,6 +134,8 @@ python3 submission_tests/part3_sensitive.py
 python3 submission_tests/part1b_priority_l2.py
 ```
 
+Part 2 (related-message groups) has no separate mandatory-ID script — a group only exists once 2+ messages are linked, and its most useful demo view is the whole `results/output_groups.json` produced by the full pipeline run above.
+
 Each script saves its output to `results/` as a JSON file.
 
 ---
@@ -144,7 +147,7 @@ pip install -r requirements-dev.txt   # only needed once
 pytest tests/ -v
 ```
 
-54 tests cover classification, extraction, sensitive detection, pipeline integration, timestamp parsing, message linking, and priority scoring. All tests use fabricated example messages — the real dataset is never used in tests.
+68 tests cover classification, extraction, sensitive detection, pipeline integration, timestamp parsing, message linking, priority scoring, and related-message grouping. All tests use fabricated example messages — the real dataset is never used in tests.
 
 ---
 
@@ -156,8 +159,9 @@ intelligent-message-pipeline/
 ├── classify.py              ← Part 1: semantic sub-class classifier
 ├── extract.py               ← Part 2: task/event extractor
 ├── sensitive.py             ← Part 3: sensitive info detector + masker
-├── linking.py               ← L2: status-update templates + subject registry (shared by priority.py)
+├── linking.py               ← L2: status-update templates + subject registry + shared resolver
 ├── priority.py              ← L2 Part 1: priority and action engine
+├── grouping.py              ← L2 Part 2: related-message grouping
 ├── main.py                  ← pipeline entry point (run this)
 ├── requirements.txt
 ├── requirements-dev.txt
@@ -169,7 +173,7 @@ intelligent-message-pipeline/
 │   ├── part1b_priority_l2.py
 │   ├── part2_extraction.py
 │   └── part3_sensitive.py
-└── tests/                   ← pytest test suite (54 tests)
+└── tests/                   ← pytest test suite (68 tests)
 ```
 
 ---
@@ -226,7 +230,7 @@ See `sensitive.py`.
 
 ## L2 extension — how it builds on L1
 
-L2 does not replace any L1 module — `classify.py`, `extract.py`, and `sensitive.py` still run unchanged (`extract.py` gained two extra sub-classes, see below) and produce the same three L1 output files. L2 adds two new modules on top:
+L2 does not replace any L1 module — `classify.py`, `extract.py`, and `sensitive.py` still run unchanged (`extract.py` gained two extra sub-classes, see below) and produce the same three L1 output files. L2 adds three new modules on top:
 
 ```
 messages (L1, then L2, then the L2 demo batch — chronological throughout)
@@ -238,18 +242,25 @@ messages (L1, then L2, then the L2 demo batch — chronological throughout)
                            didn't cover)
         │
         ▼
-  linking.py   — regex templates recognise L2's status-update phrasing
+  linking.py   — regex templates recognise L2's status-update phrasing,
+                 ONE shared chronological resolver for Part 1 AND Part 2
    ├─ detect_status_update(message)  → completed / cancelled / rescheduled /
    │                                    deadline_changed / conflicting_deadline /
    │                                    status_check / ambiguous
-   └─ SubjectRegistry.find(phrase)   → earliest earlier item whose own
-                                        description CONTAINS that phrase
-        │
-        ▼
-  priority.py  — one chronological pass, scores every actionable message
-        │
-        ▼
-  results/output_priorities.json
+   ├─ SubjectRegistry.find(phrase)   → earliest earlier item whose own
+   │                                    description CONTAINS that phrase
+   └─ resolve_messages(...)          → registry + per-message resolution,
+                                        called by BOTH modules below so they
+                                        can never disagree about groupings
+        │                    │
+        ▼                    ▼
+  priority.py          grouping.py
+  (L2 Part 1)           (L2 Part 2)
+  scores every          turns each tracked subject into a group: title,
+  actionable message     related message ids, chronology-derived summary,
+        │                status, latest deadline, confidence
+        ▼                    ▼
+  output_priorities.json    output_groups.json
 ```
 
 Run order is enforced by `main.py --extra-input` re-sorting on timestamp (not by argument order), and by `linking.py`'s registry only ever looking *backward* in time — a message can only update a subject that was already seen.
@@ -306,6 +317,48 @@ Even after that fix, `semantic_urgency` firing on a `status_check` message (e.g.
 
 ---
 
+## How related messages are identified (L2 Part 2)
+
+Part 2 does not re-derive "which messages are about the same subject" — that would risk two engines quietly disagreeing. It calls `linking.resolve_messages()`, the exact same chronological resolver `priority.py` uses, refactored out of `priority.py` into `linking.py` specifically so both modules share one source of truth.
+
+```
+linking.resolve_messages(messages, extracted_items)
+        │  (shared with priority.py — one resolution, not two)
+        ▼
+  SubjectRegistry            now also tracks, per subject:
+                                mentions   -- every message_id linked to it, in order
+                                history    -- {message_id, event} for every mention
+                                first_seen_order -- registration position (backward-only lookups)
+        │
+        ▼
+  grouping.compute_groups()
+   ├─ status:   maps internal state -> Pending / In progress / Completed /
+   │            Rescheduled / Cancelled / Unclear (Unclear = last event was
+   │            an ambiguous mention; In progress = still pending but with
+   │            2+ mentions -- i.e. actively being followed up on)
+   ├─ title:    the item's own extract.py title, or (for REF_-only subjects
+   │            with no formal item) extract.py's own _clean_title() applied
+   │            to the message that first established the subject
+   ├─ summary:  generated from `history`'s event sequence ("created, then
+   │            followed up on (3x), marked completed") -- not a static
+   │            template per group, a fresh sentence built from that
+   │            group's actual chronology every time
+   └─ confidence: higher for real TASK_/EVENT_ items than REF_-only ones,
+                +  for more corroborating mentions, − for any ambiguous or
+                   conflicting-deadline event seen along the way
+        │
+        ▼
+  results/output_groups.json   (only subjects with 2+ related messages --
+                                 a lone, never-followed-up message isn't a
+                                 "grouping", Part 3 can reference it directly)
+```
+
+**"Must consider message meaning, not just a common word":** the template layer itself is what does this — a match requires the full distinguishing action phrase to appear (e.g. "review the security audit report"), not one shared word. Verified directly with a regression test (`test_default_config_never_merges_different_subjects_sharing_a_template`): two different tasks phrased with the identical template ("confirm the **interview** slot" vs. "confirm the **delivery** slot") stay in separate groups.
+
+**An embedding-based fallback was built and rejected, on purpose.** For messages that match no template at all but are clearly about a known subject in meaning (the spec's own example, "Reminder — the report is due tomorrow," wouldn't hit any fixed template), `grouping.py` has a `_link_semantic_mentions()` function using the same fastembed model, gated **off by default**. It was tested against held-out same-subject and different-subject message pairs before being trusted, the same discipline used for Part 1's semantic urgency signal — and it failed that test: adversarial pairs sharing a phrasing template but referring to different subjects scored 0.40–0.65 similarity, and 3 of 5 of those scored *higher* than genuine same-subject pairs (0.32–0.55). MiniLM's embedding is picking up sentence structure more than the specific entity discussed, and no threshold cleanly separates the two distributions. Shipping it would produce exactly the false grouping the assignment prohibits, so it stays disabled — a real example of "we do not build features just because the tool exists," proven with numbers, not asserted.
+
+---
+
 ## Assumptions and limitations
 
 - Messages are expected to be in English.
@@ -316,6 +369,8 @@ Even after that fix, `semantic_urgency` firing on a `status_check` message (e.g.
 - Item ids are derived from the full `message_id` (e.g. `TASK_MSG_0042`, not a bare running number) specifically so that combining files with independent numbering (the L1 file, the L2 file, and the separate L2 demo file, which all restart their own numeric-looking suffixes) can never silently collide two unrelated items into one.
 - Priority weights are hand-set constants (`priority.py`), not learned from labelled data — there is no ground-truth priority dataset to fit against. They are documented above so every decision is explainable and reproducible, not a black box.
 - `high` accounts for ~54% of all priority decisions over the full L1+L2+demo run (308/566), and `overdue` is the single biggest driver — because `reference_dt` is pinned to the *last* message in the whole batch (2026-10-05), and most L1 tasks from September never received a follow-up or completion message anywhere in the dataset. Evaluated from that single end-of-batch snapshot, those tasks genuinely are overdue — this is the correct "what's the state right now" answer (and what Part 3's assistant needs), not an inflated score. It does mean the aggregate distribution reflects "old backlog with no resolution," not scoring being loose.
+- Grouping only forms a group once a message either creates a formal item or matches one of `linking.py`'s regex templates — a subject that's only ever discussed in free-form prose with no template match and no shared item-creating keyword will never be grouped (the semantic fallback that could catch some of these was tested and deliberately disabled — see above). Over the real dataset this produces 32 groups covering the templated backlog, which is the dataset's actual structure; a less rigidly-templated real-world inbox would need a better meaning-based fallback than raw cosine similarity (named-entity extraction, most likely) before that gap could close safely.
+- A group's `status` reflects the state as of the LAST status-changing event for that subject, which is not always the same as the state implied by the LAST message in the group — a trailing `status_check` ("still needs attention") after a `cancelled` message correctly leaves the group `Cancelled`, since asking about something doesn't change its status. Conversely, a `deadline_changed`/`rescheduled`/`conflicting_deadline` message arriving after a `completed`/`cancelled` claim is treated as more specific, more recent evidence and reopens the item (see Part 1's `reopened` signal) — this is intentional, not a stale read.
 
 ---
 

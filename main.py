@@ -33,6 +33,7 @@ import pandas as pd
 from classify import classify_message
 from extract import extract_item
 from priority import compute_priorities
+from grouping import compute_groups
 
 
 def setup_logging(verbose: bool = False) -> logging.Logger:
@@ -173,6 +174,7 @@ def run(input_path: str, mandatory_path: Optional[str], verbose: bool = False, e
     # dataset, so datetime.now() would misjudge every deadline (see README).
     reference_dt = max((m["timestamp"] for m in messages), default=None)
     priorities = compute_priorities(messages, classifications, extracted_items, sensitive_findings, reference_dt)
+    groups = compute_groups(messages, extracted_items)
 
     os.makedirs("results", exist_ok=True)
     with open("results/output_classifications.json", "w") as f:
@@ -183,6 +185,8 @@ def run(input_path: str, mandatory_path: Optional[str], verbose: bool = False, e
         json.dump(sensitive_findings, f, indent=2)
     with open("results/output_priorities.json", "w") as f:
         json.dump(priorities, f, indent=2)
+    with open("results/output_groups.json", "w") as f:
+        json.dump(groups, f, indent=2)
     if row_errors:
         with open("results/output_row_errors.json", "w") as f:
             json.dump(row_errors, f, indent=2)
@@ -194,6 +198,7 @@ def run(input_path: str, mandatory_path: Optional[str], verbose: bool = False, e
     logger.info(f"Sensitive findings:      {len(sensitive_findings)} -> results/output_sensitive_findings.json")
     logger.info(f"Priority decisions:      {len(priorities)} -> results/output_priorities.json "
                 f"(reference time: {reference_dt})")
+    logger.info(f"Related-message groups:  {len(groups)} -> results/output_groups.json")
     if row_errors:
         logger.warning(f"{len(row_errors)} row(s) failed — see results/output_row_errors.json and logs/run.log")
 
@@ -216,6 +221,7 @@ def run(input_path: str, mandatory_path: Optional[str], verbose: bool = False, e
         "extracted_items": extracted_items,
         "sensitive_findings": sensitive_findings,
         "priorities": priorities,
+        "groups": groups,
         "row_errors": row_errors,
     }
 

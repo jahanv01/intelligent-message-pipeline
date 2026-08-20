@@ -36,7 +36,7 @@ import numpy as np
 
 from extract import PRIORITY_HIGH_SIGNALS
 from classify import embed_texts
-from linking import SubjectRegistry, detect_status_update, resolve_when
+from linking import resolve_messages
 
 # ---------------------------------------------------------------------------
 # Semantic urgency -- catches paraphrases the fixed PRIORITY_HIGH_SIGNALS
@@ -341,73 +341,34 @@ def compute_priorities(messages, classifications, extracted_items, sensitive_fin
     if reference_dt is None:
         reference_dt = max(m["timestamp"] for m in messages) if messages else datetime.now()
 
-    items_by_msg = {i["source_message_id"]: i for i in extracted_items}
     category_by_msg = {c["message_id"]: c["category"] for c in classifications}
     sensitive_by_msg = {}
     for f in sensitive_findings:
         sensitive_by_msg.setdefault(f["message_id"], []).append(f)
 
-    registry = SubjectRegistry()
+    registry, resolutions = resolve_messages(messages, extracted_items)
+    messages_by_id = {m["message_id"]: m for m in messages}
     decisions = []
 
-    def _base_state(it):
-        return {"sub_class": it["sub_class"], "type": it["type"],
-                "deadline": it["deadline"], "time": it["time"], "status": "pending"}
-
-    def _mint_ref_id(message_id):
-        # A status-changing/status-check message can be the FIRST mention of a
-        # subject that extract.py never turned into a formal item (its
-        # phrasing doesn't hit any extraction keyword). Rather than silently
-        # dropping every later update about that subject, mint a lightweight
-        # reference id from this message so the chain still links up -- kept
-        # visually distinct (REF_ prefix) from real TASK_/EVENT_ ids so it's
-        # obvious in the output which subjects have no formal item behind them.
-        return f"REF_{message_id}"
-
-    for m in messages:
-        mid = m["message_id"]
-        item = items_by_msg.get(mid)
-        update = detect_status_update(m["message"])
-
-        resolved_item_id = None
-        is_restatement = False
-
-        found_item_id = registry.find(update["subject_norm"]) if update and update["subject_norm"] else None
-
-        if update:
-            if found_item_id:
-                registry.apply_update(found_item_id, update, m["timestamp"])
-                resolved_item_id = found_item_id
-                is_restatement = item is not None  # item also exists but we deliberately don't use it
-            elif item:
-                registry.register(item["item_id"], item["description"], _base_state(item))
-                registry.apply_update(item["item_id"], update, m["timestamp"])
-                resolved_item_id = item["item_id"]
-            elif update["subject_norm"]:
-                ref_id = _mint_ref_id(mid)
-                registry.register(ref_id, m["message"], {
-                    "sub_class": None, "type": "reference", "deadline": None, "time": None, "status": "pending",
-                })
-                registry.apply_update(ref_id, update, m["timestamp"])
-                resolved_item_id = ref_id
-            # else: no subject could be resolved at all -- deliberately not
-            # linked or invented (see README "Assumptions and limitations").
-        elif item:
-            registry.register(item["item_id"], item["description"], _base_state(item))
-            resolved_item_id = item["item_id"]
-
-        if resolved_item_id is None:
+    for res in resolutions:
+        # A "semantic" link_type (grouping.py's fallback) means we know a
+        # message is likely about this subject but not what kind of update
+        # it represents -- never enough to score a priority from.
+        if res["item_id"] is None or res["link_type"] not in {"origin", "template"}:
             continue
 
-        state = registry.state_for(resolved_item_id)
+        mid = res["message_id"]
+        m = messages_by_id[mid]
+        state = registry.state_for(res["item_id"])
         sensitive_hit = bool(sensitive_by_msg.get(mid))
         category = category_by_msg.get(mid)
         level, confidence, signals, reason = _score(
-            state, m.get("sender"), m["message"], sensitive_hit, reference_dt, is_restatement, category,
+            state, m.get("sender"), m["message"], sensitive_hit, reference_dt,
+            res["is_restatement"], category,
         )
         decisions.append({
             "message_id": mid,
-            "item_id": resolved_item_id,
+            "item_id": res["item_id"],
             "priority": level,
             "reason": reason,
             "signals": signals,
