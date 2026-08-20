@@ -219,11 +219,13 @@ def compute_groups(messages, extracted_items, min_group_size: int = MIN_GROUP_SI
         groups.append({
             "group_id": f"GROUP_{seq:03d}",
             "title": _title_for(item_id, state, items_by_id),
+            "type": item_type,  # "task" / "event" / "reference" (no formal item -- see REF_ ids)
             "related_message_ids": list(mentions),
             "related_item_ids": related_item_ids,
             "summary": _summarize(item_type, state.get("history", [])),
             "status": _status_for(state),
             "latest_deadline": state.get("deadline"),
+            "latest_time": state.get("time"),
             "confidence": _confidence_for(item_id, state),
         })
 

@@ -14,6 +14,8 @@ from extract import extract_item
 from sensitive import detect_sensitive
 from priority import compute_priorities
 from grouping import compute_groups, annotate_superseded
+from privacy import route_all
+from assistant import build_knowledge_base, answer_query
 
 
 def _parse_ts(raw_ts) -> datetime:
@@ -69,7 +71,9 @@ def _run_pipeline(df: pd.DataFrame):
     priorities = compute_priorities(messages, classifications, extracted, sensitive_findings)
     groups = compute_groups(messages, extracted)
     annotate_superseded(extracted, groups)
-    return classifications, extracted, sensitive_findings, priorities, groups
+    routing = route_all(messages, sensitive_findings)
+    kb = build_knowledge_base(messages, classifications, extracted, sensitive_findings, priorities, groups, routing)
+    return classifications, extracted, sensitive_findings, priorities, groups, routing, kb
 
 
 def _cls_table(classifications):
@@ -105,6 +109,14 @@ def _pri_table(priorities):
     return pd.DataFrame(rows, columns=["Message ID", "Item ID", "Priority", "Confidence", "Signals", "Reason"])
 
 
+def _route_table(routing):
+    cols = ["Message ID", "Route", "Risk", "Reason"]
+    if not routing:
+        return pd.DataFrame(columns=cols)
+    rows = [[r["message_id"], r["route"], r["risk"], r["reason"]] for r in routing]
+    return pd.DataFrame(rows, columns=cols)
+
+
 def _grp_table(groups):
     cols = ["Group ID", "Title", "Status", "Latest Deadline", "Confidence", "Related Messages", "Summary"]
     if not groups:
@@ -117,40 +129,65 @@ def _grp_table(groups):
 
 def run_demo(_):
     df = pd.DataFrame(SAMPLE_ROWS, columns=["message_id", "timestamp", "sender", "message"])
-    cls, ext, sens, pri, grp = _run_pipeline(df)
+    cls, ext, sens, pri, grp, routing, kb = _run_pipeline(df)
     summary = (
         f"**Demo mode** — {len(cls)} fabricated sample messages processed\n\n"
         f"- Classified: {len(cls)}  |  Tasks/events extracted: {len(ext)}  |  "
         f"Sensitive findings: {len(sens)}  |  Priority decisions: {len(pri)}  |  Groups: {len(grp)}\n\n"
         f"> These 8 messages are independent fabricated examples, so no related-message "
-        f"groups are expected here — try the Upload tab with a real multi-message CSV to see grouping in action."
+        f"groups are expected here — try the Upload tab with a real multi-message CSV to see grouping in action.\n\n"
+        f"> Ask a question in the **Ask the Assistant** tab now — it will answer using this batch."
     )
-    return summary, _cls_table(cls), _ext_table(ext), _sens_table(sens), _pri_table(pri), _grp_table(grp)
+    return (summary, _cls_table(cls), _ext_table(ext), _sens_table(sens), _pri_table(pri),
+            _grp_table(grp), _route_table(routing), kb)
 
 
 def run_upload(file):
     if file is None:
-        return "Please upload a CSV file.", None, None, None, None, None
+        return "Please upload a CSV file.", None, None, None, None, None, None, None
     try:
         df = pd.read_csv(file)
     except Exception as e:
-        return f"Could not read file: {e}", None, None, None, None, None
+        return f"Could not read file: {e}", None, None, None, None, None, None, None
 
     required = {"message_id", "timestamp", "sender", "message"}
     missing = required - set(c.lower() for c in df.columns)
     if missing:
-        return f"Missing columns: {missing}. Required: message_id, timestamp, sender, message", None, None, None, None, None
+        return (f"Missing columns: {missing}. Required: message_id, timestamp, sender, message",
+                None, None, None, None, None, None, None)
 
     df = df.sort_values("timestamp").reset_index(drop=True)
-    cls, ext, sens, pri, grp = _run_pipeline(df)
+    cls, ext, sens, pri, grp, routing, kb = _run_pipeline(df)
 
     summary = (
         f"**Processed {len(df)} messages**\n\n"
         f"- Classified: {len(cls)}  |  Tasks/events extracted: {len(ext)}  |  "
         f"Sensitive findings: {len(sens)}  |  Priority decisions: {len(pri)}  |  Groups: {len(grp)}\n\n"
-        f"> Sensitive values are masked — raw values are never displayed."
+        f"> Sensitive values are masked — raw values are never displayed.\n\n"
+        f"> Ask a question in the **Ask the Assistant** tab now — it will answer using this batch."
     )
-    return summary, _cls_table(cls), _ext_table(ext), _sens_table(sens), _pri_table(pri), _grp_table(grp)
+    return (summary, _cls_table(cls), _ext_table(ext), _sens_table(sens), _pri_table(pri),
+            _grp_table(grp), _route_table(routing), kb)
+
+
+def run_ask(kb, query):
+    if kb is None:
+        return "Run the Demo or Upload tab first, then come back and ask a question.", None
+    if not query or not query.strip():
+        return "Type a question first.", None
+    ans = answer_query(kb, query)
+    md = (
+        f"**Answer:** {ans['answer']}\n\n"
+        f"**Confidence:** {ans['confidence']}\n\n"
+        f"**Reason:** {ans['reason']}"
+    )
+    detail = pd.DataFrame([{
+        "supporting_message_ids": ", ".join(ans["supporting_message_ids"]),
+        "related_item_ids": ", ".join(ans["related_item_ids"]),
+        "group_id": ans["group_id"] or "",
+        "relevance_scores": ", ".join(f"{s:.2f}" for s in ans["relevance_scores"]),
+    }])
+    return md, detail
 
 
 # ---------------------------------------------------------------------------
@@ -163,17 +200,22 @@ with gr.Blocks(title="Message Intelligence Pipeline") as demo:
         "**Fully local — no external API calls.**"
     )
 
+    demo_kb_state = gr.State(value=None)
+    upload_kb_state = gr.State(value=None)
+
     with gr.Tab("Demo (fabricated samples)"):
         gr.Markdown("Click **Run Demo** to process 8 built-in fabricated messages covering all 6 categories.")
         demo_btn = gr.Button("Run Demo", variant="primary")
         demo_summary = gr.Markdown()
-        demo_cls  = gr.Dataframe(label="Part 1 — Classification")
-        demo_ext  = gr.Dataframe(label="Part 2 — Extraction")
-        demo_sens = gr.Dataframe(label="Part 3 — Sensitive Findings")
-        demo_pri  = gr.Dataframe(label="L2 Part 1 — Priority")
-        demo_grp  = gr.Dataframe(label="L2 Part 2 — Related-Message Groups")
+        demo_cls   = gr.Dataframe(label="Part 1 — Classification")
+        demo_ext   = gr.Dataframe(label="Part 2 — Extraction")
+        demo_sens  = gr.Dataframe(label="Part 3 — Sensitive Findings")
+        demo_pri   = gr.Dataframe(label="L2 Part 1 — Priority")
+        demo_grp   = gr.Dataframe(label="L2 Part 2 — Related-Message Groups")
+        demo_route = gr.Dataframe(label="L2 Part 3 — Privacy Routing")
         demo_btn.click(run_demo, inputs=demo_btn,
-                        outputs=[demo_summary, demo_cls, demo_ext, demo_sens, demo_pri, demo_grp])
+                        outputs=[demo_summary, demo_cls, demo_ext, demo_sens, demo_pri, demo_grp,
+                                 demo_route, demo_kb_state])
 
     with gr.Tab("Upload your CSV"):
         gr.Markdown(
@@ -183,12 +225,35 @@ with gr.Blocks(title="Message Intelligence Pipeline") as demo:
         file_input = gr.File(label="Upload messages.csv", file_types=[".csv"])
         upload_btn = gr.Button("Process", variant="primary")
         upload_summary = gr.Markdown()
-        upload_cls  = gr.Dataframe(label="Part 1 — Classification")
-        upload_ext  = gr.Dataframe(label="Part 2 — Extraction")
-        upload_sens = gr.Dataframe(label="Part 3 — Sensitive Findings")
-        upload_pri  = gr.Dataframe(label="L2 Part 1 — Priority")
-        upload_grp  = gr.Dataframe(label="L2 Part 2 — Related-Message Groups")
+        upload_cls   = gr.Dataframe(label="Part 1 — Classification")
+        upload_ext   = gr.Dataframe(label="Part 2 — Extraction")
+        upload_sens  = gr.Dataframe(label="Part 3 — Sensitive Findings")
+        upload_pri   = gr.Dataframe(label="L2 Part 1 — Priority")
+        upload_grp   = gr.Dataframe(label="L2 Part 2 — Related-Message Groups")
+        upload_route = gr.Dataframe(label="L2 Part 3 — Privacy Routing")
         upload_btn.click(run_upload, inputs=file_input,
-                          outputs=[upload_summary, upload_cls, upload_ext, upload_sens, upload_pri, upload_grp])
+                          outputs=[upload_summary, upload_cls, upload_ext, upload_sens, upload_pri, upload_grp,
+                                   upload_route, upload_kb_state])
+
+    with gr.Tab("Ask the Assistant"):
+        gr.Markdown(
+            "Run **Demo** or **Upload** first, then ask a question about that batch — "
+            "e.g. *\"Which tasks are still pending?\"*, *\"What meetings were rescheduled?\"*, "
+            "*\"Which messages require confirmation?\"*.\n\n"
+            "> Answers only use retrieved evidence from this batch — if nothing matches confidently, "
+            "the assistant says so instead of guessing."
+        )
+        which_batch = gr.Radio(["Demo batch", "Uploaded batch"], value="Demo batch", label="Answer using")
+        query_box = gr.Textbox(label="Your question", placeholder="What tasks should I complete today?")
+        ask_btn = gr.Button("Ask", variant="primary")
+        ask_answer = gr.Markdown()
+        ask_detail = gr.Dataframe(label="Evidence")
+
+        def _run_ask(which, query, demo_kb, upload_kb):
+            kb = demo_kb if which == "Demo batch" else upload_kb
+            return run_ask(kb, query)
+
+        ask_btn.click(_run_ask, inputs=[which_batch, query_box, demo_kb_state, upload_kb_state],
+                      outputs=[ask_answer, ask_detail])
 
 demo.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)), ssr_mode=False)

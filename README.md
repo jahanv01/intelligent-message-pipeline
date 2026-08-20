@@ -101,7 +101,7 @@ python main.py --input dataset/messages.csv \
     --mandatory dataset/mandatory_demo_ids.csv
 ```
 
-`--extra-input` accepts any number of additional files; everything is concatenated and re-sorted by timestamp before processing, so "L2 after L1, chronological order" holds regardless of argument order. This writes four output files to `results/`:
+`--extra-input` accepts any number of additional files; everything is concatenated and re-sorted by timestamp before processing, so "L2 after L1, chronological order" holds regardless of argument order. This writes six output files to `results/`:
 
 ```
 results/
@@ -110,6 +110,7 @@ results/
   output_sensitive_findings.json   ← Part 3: sensitive findings (values masked)
   output_priorities.json           ← L2 Part 1: priority decision per actionable message
   output_groups.json               ← L2 Part 2: related-message groups
+  output_privacy_routing.json      ← L2 Part 3: local / requires_confirmation / blocked per message
 ```
 
 The `results/` folder is git-ignored — outputs are never committed to the repo.
@@ -132,6 +133,9 @@ python3 submission_tests/part3_sensitive.py
 
 # L2 Part 1 — priority decisions for the L2 demo batch (runs the full L1+L2+demo pipeline)
 python3 submission_tests/part1b_priority_l2.py
+
+# L2 Part 3 — assistant answers for all 8 mandatory l2_demo_queries.csv questions
+python3 submission_tests/part3_assistant_l2.py
 ```
 
 Part 2 (related-message groups) has no separate mandatory-ID script — a group only exists once 2+ messages are linked, and its most useful demo view is the whole `results/output_groups.json` produced by the full pipeline run above.
@@ -147,7 +151,7 @@ pip install -r requirements-dev.txt   # only needed once
 pytest tests/ -v
 ```
 
-71 tests cover classification, extraction, sensitive detection, pipeline integration, timestamp parsing, message linking, priority scoring, and related-message grouping. All tests use fabricated example messages — the real dataset is never used in tests.
+90 tests cover classification, extraction, sensitive detection, pipeline integration, timestamp parsing, message linking, priority scoring, related-message grouping, privacy routing, and the semantic assistant. All tests use fabricated example messages — the real dataset is never used in tests.
 
 ---
 
@@ -155,14 +159,17 @@ pytest tests/ -v
 
 ```
 intelligent-message-pipeline/
-├── app.py                   ← Gradio web UI (demo + CSV upload)
+├── app.py                   ← Gradio web UI (demo + CSV upload + Ask the Assistant)
 ├── classify.py              ← Part 1: semantic sub-class classifier
 ├── extract.py               ← Part 2: task/event extractor
 ├── sensitive.py             ← Part 3: sensitive info detector + masker
 ├── linking.py               ← L2: status-update templates + subject registry + shared resolver
 ├── priority.py              ← L2 Part 1: priority and action engine
 ├── grouping.py              ← L2 Part 2: related-message grouping
+├── privacy.py                ← L2 Part 3: privacy-aware routing (local/confirm/blocked)
+├── assistant.py               ← L2 Part 3: semantic search + intelligent assistant
 ├── main.py                  ← pipeline entry point (run this)
+├── BENCHMARK.md              ← L2 Part 3: benchmark comparison report
 ├── requirements.txt
 ├── requirements-dev.txt
 ├── dataset/                 ← git-ignored — place messages.csv and mandatory_demo_ids.csv here
@@ -172,8 +179,9 @@ intelligent-message-pipeline/
 │   ├── part1_classification.py
 │   ├── part1b_priority_l2.py
 │   ├── part2_extraction.py
-│   └── part3_sensitive.py
-└── tests/                   ← pytest test suite (71 tests)
+│   ├── part3_sensitive.py
+│   └── part3_assistant_l2.py
+└── tests/                   ← pytest test suite (90 tests)
 ```
 
 ---
@@ -368,6 +376,64 @@ Before calling Part 2 done, every one of the 32 groups produced from the real 11
 
 ---
 
+## How semantic retrieval works (L2 Part 3)
+
+`assistant.py` answers natural-language questions using only the structured outputs the rest of the pipeline already produced — there is no local LLM in this stack (matching the "100% local, no external calls" rule everywhere else in this project), so no answer is ever freely generated. Every sentence in an answer is built directly from retrieved facts.
+
+```
+query
+  ├─► intent detection (regex/keyword rules, ~10 known question shapes)
+  │      "blocked" / "confirm" / "why...critical" / "conflict" / "deadline"
+  │      / "reschedul" / "complet|cancel" / "critical|high-priority" /
+  │      "today" / "status of" / else -> subject_search
+  │
+  └─► entity resolution (only for subject-dependent intents)
+         1. explicit id in the query text (MSG_/DEMO_/GROUP_/TASK_/EVENT_/REF_)
+            -> always wins, no embedding needed
+         2. else: semantic search over every tracked subject's title+summary
+            -> cosine similarity, must clear SUBJECT_MATCH_THRESHOLD (0.45)
+            -> below threshold: "insufficient evidence", never a guess
+                 │
+                 ▼
+         handler retrieves evidence from priorities / groups / routing /
+         classifications / sensitive_findings -> builds the answer +
+         supporting_message_ids + related_item_ids + relevance_scores + reason
+```
+
+**Two different retrieval jobs get two different tools, deliberately.** Intent classification (which of the ~10 known question shapes is this) is done with explicit keyword rules, not embeddings — Part 1 and Part 2 both already found that a handful of anchor sentences per class doesn't reliably separate fine-grained categories with this embedding model (semantic urgency needed a hedge-word override; grouping's semantic fallback was rejected outright). A rule either matches or it doesn't, fully auditable. Entity resolution (matching free text like "the project report" to a known subject) *does* use embeddings — this is a legitimate nearest-neighbour retrieval problem over a small, distinct candidate set, always surfaced with a real similarity score and a rejection threshold, not the same/different classification problem that burned the grouping fallback.
+
+**The knowledge base reuses `grouping.py`, not a second status engine.** `assistant.py` calls `grouping.compute_groups(..., min_group_size=1)` internally — every item gets the same status/title/summary treatment as a real published group, including the ~490 items too small to appear in `output_groups.json`. One status-mapping implementation, used everywhere it's needed.
+
+**Every answer schema field the spec asks for is populated:** `answer`, `supporting_message_ids`, `related_item_ids` (task/event ids), `group_id`, `relevance_scores`, `reason`, `confidence`. A query with no confident evidence returns an explicit "I don't have enough evidence" answer with `confidence: 0.0` and a `reason` naming exactly what was checked and came up empty — verified directly against `l2_demo_queries.csv`'s DQ08 ("Was the compliance form approved by the finance director?" — never mentioned anywhere in the dataset).
+
+### Self-QA — a critical bug found by cross-checking Part 3 against raw data
+
+Building the assistant meant reading real priority decisions side by side for the first time since Part 2's refactor, and that surfaced something Part 2's own tests never caught: **`MSG_1002`, `DEMO_001`, and `DEMO_016` — three different real messages about the same subject — were producing byte-identical priority decisions**, including a `reason` string that described `DEMO_001`'s content but was attached to `MSG_1002` too.
+
+Root cause: `linking.resolve_messages()` (shared by `priority.py` and `grouping.py` since the Part 2 refactor) runs its entire chronological pass to completion *before* `priority.py` ever scores anything, mutating each subject's state dict in place. `compute_priorities()` then looped over the finished `resolutions` list afterward and read `registry.state_for(item_id)` — which by then returns the item's **final** state for every message that ever touched it, not the state as of that particular message. Every multi-message item's priority history had been silently flattened to one value since the refactor — the entire "priority updates when a later message changes things" story (the assignment's own core requirement for Part 1) was broken for any chain of 3+ messages, and no test caught it because every existing chain-based test only checked the *last* message in a 2-message scenario, where "final state" and "state as of that message" are coincidentally the same thing.
+
+**Fix:** `resolve_messages()` now snapshots a shallow copy of each item's state at the exact moment it resolves that message — before moving on to the next one — and attaches it to that resolution entry. `priority.py` scores against that snapshot, never the live (by-then-mutated) registry reference. Re-running the real dataset confirmed the fix: the "finish the test cases" `low → low → critical → critical` evolution (documented above) is restored, and `DQ04`'s "conflicting or uncertain deadlines" query result correctly *dropped* from 56 to 23 messages — the removed 33 were messages inheriting `ambiguous`/`conflicting` signals from *later* events in their own chain that hadn't happened yet at their own point in time. Covered by a new regression test that specifically checks an *earlier* message's decision in a 3-message chain, closing the exact blind spot that let this ship.
+
+## How privacy-aware routing works (L2 Part 3)
+
+`privacy.py` routes every message to exactly one of three tiers, layered directly on `sensitive.py`'s already-tested regex findings — no new detection logic, a routing *decision* on top of an existing signal:
+
+| Route | Trigger | Meaning |
+|---|---|---|
+| `blocked` | any finding with `recommended_action == "do_not_store"` (OTP, password, card, bank account, auth token, recovery code) | must never be sent externally or stored |
+| `requires_confirmation` | any finding with `recommended_action == "ask_for_confirmation"` (phone, email, physical address) | can be processed, but a human should confirm first |
+| `local` | no sensitive finding at all | processed locally, no restriction |
+
+If a message trips multiple findings, the **highest-risk route wins** (`blocked` over `requires_confirmation`) — never averaged, never the first match. Every message in every run gets a decision, written to `results/output_privacy_routing.json`, and the built-in 8-message Gradio demo (`app.py`, no dataset upload needed) already contains one genuine example of each tier (`MSG_S06` OTP → blocked, `MSG_S03` address → confirm, everything else → local) for a fast, no-setup video demo.
+
+**A real gap found and fixed while wiring this up:** `sensitive.py`'s address pattern only matched first-person disclosure ("I live at..."/"my address is..."), never third-person delivery phrasing. `DEMO_014` ("Deliver the demo device to 22 Green Park Road, Chennai") — almost certainly the L2 demo batch's intended confirmation-tier example, given `DEMO_012`/`013`/`024` are clearly the paired blocked-tier ones — was silently invisible to every privacy query. Added a second `private_address` pattern anchored on a leading street number after `deliver`/`ship`/`send ... to`, so `deliver this to John` (no digits) still correctly doesn't fire. `MSG_1039`/`MSG_1049` in the main L2 batch had the same gap and are now caught too. Covered by a positive and a negative test.
+
+## What was optimized, and how it was benchmarked
+
+See **[BENCHMARK.md](BENCHMARK.md)** for the full comparison report. Summary: `classify.py`'s embedding runtime (`sentence-transformers`+`torch` → `fastembed`/ONNX, same model weights, commit `3cde402`, predates this L2 work) was measured directly on the testing machine — real wheel sizes, a real orphaned `torch` install found and removed from this exact dev environment for a verified before/after `.venv` size (1.3 GB → 450 MB), real cached-model size (87 MB either way — same weights), and real throughput (14.2 ms/message, 70.6 msg/sec; full 1104-message pipeline in 29.67 s). The report is explicit about what was **not** re-verified (a live side-by-side accuracy comparison against the old stack) rather than assuming it away.
+
+---
+
 ## Assumptions and limitations
 
 - Messages are expected to be in English.
@@ -380,12 +446,15 @@ Before calling Part 2 done, every one of the 32 groups produced from the real 11
 - `high` accounts for ~54% of all priority decisions over the full L1+L2+demo run (308/566), and `overdue` is the single biggest driver — because `reference_dt` is pinned to the *last* message in the whole batch (2026-10-05), and most L1 tasks from September never received a follow-up or completion message anywhere in the dataset. Evaluated from that single end-of-batch snapshot, those tasks genuinely are overdue — this is the correct "what's the state right now" answer (and what Part 3's assistant needs), not an inflated score. It does mean the aggregate distribution reflects "old backlog with no resolution," not scoring being loose.
 - Grouping only forms a group once a message either creates a formal item or matches one of `linking.py`'s regex templates — a subject that's only ever discussed in free-form prose with no template match and no shared item-creating keyword will never be grouped (the semantic fallback that could catch some of these was tested and deliberately disabled — see above). Over the real dataset this produces 32 groups covering the templated backlog, which is the dataset's actual structure; a less rigidly-templated real-world inbox would need a better meaning-based fallback than raw cosine similarity (named-entity extraction, most likely) before that gap could close safely.
 - A group's `status` reflects the state as of the LAST status-changing event for that subject, which is not always the same as the state implied by the LAST message in the group — a trailing `status_check` ("still needs attention") after a `cancelled` message correctly leaves the group `Cancelled`, since asking about something doesn't change its status. Conversely, a `deadline_changed`/`rescheduled`/`conflicting_deadline` message arriving after a `completed`/`cancelled` claim is treated as more specific, more recent evidence and reopens the item (see Part 1's `reopened` signal) — this is intentional, not a stale read.
+- The assistant's intent detection is a fixed set of ~10 keyword rules (see "How semantic retrieval works"), not a general-purpose NLU model — a question phrased very differently from the examples in the spec and `l2_demo_queries.csv` may fall through to the `subject_search` fallback instead of the intent actually intended. This is a deliberate precision-over-recall tradeoff, same reasoning as the rest of this project: a rule that doesn't fire is safer than one that fires on the wrong thing.
+- Subject search (`SUBJECT_MATCH_THRESHOLD = 0.45`) was tuned the same empirical way as Part 1/2's thresholds, but against a smaller held-out set than those were — it's a reasonable default for this dataset's vocabulary, not a value with the same statistical backing as the semantic urgency (10/10 held-out) or grouping-fallback (rejected outright, see above) thresholds.
+- There is no local LLM in this stack, by design (matches the "100% local, no external calls" rule already governing every other part of this pipeline) — every answer sentence is a template filled from retrieved structured facts, never freely generated prose. This means answers read a bit mechanically compared to a chat-style assistant; the tradeoff is that every word in an answer traces directly back to a specific field in a specific output file.
 
 ---
 
 ## AI-tool usage disclosure
 
 - **L1:** GitHub Copilot (VS Code) was used to assist with code suggestions, debugging, and refactoring during development.
-- **L2:** Claude Code was used to help design and implement the priority/linking engine (`linking.py`, `priority.py`), extend `extract.py`/`main.py`/`app.py`, and write the accompanying tests, working from the assignment brief and the existing L1 codebase.
+- **L2:** Claude Code was used to help design and implement the priority engine (`priority.py`), the shared linking/resolution layer (`linking.py`), related-message grouping (`grouping.py`), privacy-aware routing (`privacy.py`), the semantic search assistant (`assistant.py`), the benchmark measurements (`BENCHMARK.md`), and the accompanying tests — extending `extract.py`/`sensitive.py`/`main.py`/`app.py` where a genuine gap was found — working from the assignment brief and the existing L1 codebase.
 - All code was reviewed, understood, and verified by the author before submission — including manually tracing the signal weights and linking logic against the actual dataset (see "How priority is calculated and updated" above).
 

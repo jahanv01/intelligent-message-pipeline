@@ -34,6 +34,7 @@ from classify import classify_message
 from extract import extract_item
 from priority import compute_priorities
 from grouping import compute_groups, annotate_superseded
+from privacy import route_all
 
 
 def setup_logging(verbose: bool = False) -> logging.Logger:
@@ -176,6 +177,7 @@ def run(input_path: str, mandatory_path: Optional[str], verbose: bool = False, e
     priorities = compute_priorities(messages, classifications, extracted_items, sensitive_findings, reference_dt)
     groups = compute_groups(messages, extracted_items)
     annotate_superseded(extracted_items, groups)  # adds "superseded_by" -- see README
+    routing = route_all(messages, sensitive_findings)
 
     os.makedirs("results", exist_ok=True)
     with open("results/output_classifications.json", "w") as f:
@@ -188,6 +190,8 @@ def run(input_path: str, mandatory_path: Optional[str], verbose: bool = False, e
         json.dump(priorities, f, indent=2)
     with open("results/output_groups.json", "w") as f:
         json.dump(groups, f, indent=2)
+    with open("results/output_privacy_routing.json", "w") as f:
+        json.dump(routing, f, indent=2)
     if row_errors:
         with open("results/output_row_errors.json", "w") as f:
             json.dump(row_errors, f, indent=2)
@@ -200,6 +204,10 @@ def run(input_path: str, mandatory_path: Optional[str], verbose: bool = False, e
     logger.info(f"Priority decisions:      {len(priorities)} -> results/output_priorities.json "
                 f"(reference time: {reference_dt})")
     logger.info(f"Related-message groups:  {len(groups)} -> results/output_groups.json")
+    blocked_n = sum(1 for r in routing if r["route"] == "blocked")
+    confirm_n = sum(1 for r in routing if r["route"] == "requires_confirmation")
+    logger.info(f"Privacy routing:         {len(routing)} -> results/output_privacy_routing.json "
+                f"({blocked_n} blocked, {confirm_n} require confirmation)")
     if row_errors:
         logger.warning(f"{len(row_errors)} row(s) failed — see results/output_row_errors.json and logs/run.log")
 
@@ -218,11 +226,13 @@ def run(input_path: str, mandatory_path: Optional[str], verbose: bool = False, e
 
     logger.info("=== Pipeline run finished ===")
     return {
+        "messages": messages,
         "classifications": classifications,
         "extracted_items": extracted_items,
         "sensitive_findings": sensitive_findings,
         "priorities": priorities,
         "groups": groups,
+        "routing": routing,
         "row_errors": row_errors,
     }
 
