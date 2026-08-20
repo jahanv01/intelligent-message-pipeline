@@ -359,7 +359,7 @@ def compute_priorities(messages, classifications, extracted_items, sensitive_fin
 
         mid = res["message_id"]
         m = messages_by_id[mid]
-        state = registry.state_for(res["item_id"])
+        state = res["state_snapshot"]  # state AS OF this message, not the item's final state
         sensitive_hit = bool(sensitive_by_msg.get(mid))
         category = category_by_msg.get(mid)
         level, confidence, signals, reason = _score(

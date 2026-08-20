@@ -141,6 +141,39 @@ def test_sensitive_content_adds_signal_and_score():
     assert "sensitive_content" in d["signals"]
 
 
+def test_earlier_decision_in_a_chain_is_not_overwritten_by_the_items_final_state():
+    """Regression: a message's priority decision must reflect state AS OF
+    THAT MESSAGE, not the item's FINAL state after every later message has
+    also been processed. Found via manual output audit -- three different
+    real messages on the same item were producing byte-identical decisions
+    because resolve_messages() (used by both priority.py and grouping.py)
+    finishes its whole chronological pass before priority.py ever scores
+    anything, and registry.state_for() returns the SAME mutable dict for
+    every message on that item -- so scoring after the fact silently
+    flattens the entire history to one value."""
+    rows = [
+        ("MSG_1", datetime(2026, 9, 1), "Ram", "Please review the report by 2026-09-20"),
+        ("MSG_2", datetime(2026, 9, 5), "Ram", "Please check the latest status of review the report."),
+        ("MSG_3", datetime(2026, 9, 10), "Ram",
+         "The deadline to review the report is now 2026-09-10, earlier than "
+         "previously planned. Treat this as urgent."),
+    ]
+    messages, items, sens = _build(rows)
+    decisions = compute_priorities(messages, [], items, sens)
+    d1 = _by_id(decisions, "MSG_1")
+    d2 = _by_id(decisions, "MSG_2")
+    d3 = _by_id(decisions, "MSG_3")
+    # MSG_2 is a plain status-check BEFORE the deadline was ever moved --
+    # it must NOT show urgent_language or deadline_moved_earlier, even
+    # though MSG_3 (which comes after it) introduces both.
+    assert "urgent_language" not in d2["signals"]
+    assert "deadline_moved_earlier" not in d2["signals"]
+    assert d2["reason"] != d3["reason"]
+    assert "urgent_language" in d3["signals"]
+    assert "deadline_moved_earlier" in d3["signals"]
+    assert d3["priority"] == "critical"
+
+
 def test_priority_sender_role_adds_signal():
     rows = [("MSG_1", datetime(2026, 9, 5), "Project Lead", "New task: measure memory usage by 2026-09-20")]
     messages, items, sens = _build(rows)

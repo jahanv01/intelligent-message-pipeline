@@ -359,12 +359,26 @@ def resolve_messages(messages, extracted_items):
             resolved_item_id = item["item_id"]
             link_type = "origin"
 
+        # Snapshot state AS OF THIS MESSAGE, not a live reference into the
+        # registry. registry.state_for() returns the SAME mutable dict for
+        # every message on this item_id -- by the time a caller (priority.py)
+        # loops over `resolutions` after this whole pass has finished, every
+        # message would otherwise see the item's FINAL state, flattening the
+        # entire "priority evolves over time" story to one value per item.
+        # Bug found via manual output audit: MSG_1002, DEMO_001, and DEMO_016
+        # (three different messages, same item) were producing byte-identical
+        # priority decisions. A shallow copy is enough -- _score() only reads
+        # scalar fields (status/deadline/time/urgent/...), never the growing
+        # mentions/history lists.
+        state_snapshot = dict(registry.state_for(resolved_item_id)) if resolved_item_id else None
+
         resolutions.append({
             "message_id": mid,
             "item_id": resolved_item_id,
             "is_restatement": is_restatement,
             "update": update,
             "link_type": link_type,
+            "state_snapshot": state_snapshot,
         })
 
     return registry, resolutions
