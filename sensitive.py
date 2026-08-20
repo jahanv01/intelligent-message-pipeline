@@ -118,6 +118,20 @@ PATTERNS = [
         "requires_keyword": None,
         "recommended_action": "ask_for_confirmation",
     },
+    {
+        # Third-person/delivery phrasing ("Deliver the device to 22 Green
+        # Park Road, Chennai") -- the pattern above only catches first-person
+        # disclosure ("I live at..."). Anchored on a leading street number so
+        # "deliver this to John" (no address) doesn't false-positive.
+        "type": "private_address",
+        "risk": "medium",
+        "regex": re.compile(
+            r"\b(?:deliver|ship|send)\b.{0,40}?\bto\s+(\d+[^.!?]{4,55})",
+            re.IGNORECASE,
+        ),
+        "requires_keyword": None,
+        "recommended_action": "ask_for_confirmation",
+    },
 ]
 
 

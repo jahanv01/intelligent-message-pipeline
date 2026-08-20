@@ -45,6 +45,21 @@ def test_pin_detected():
     assert result[0]["sensitivity_type"] == "pin"
 
 
+def test_delivery_phrasing_address_detected():
+    """'Deliver X to ADDRESS' is third-person/instructional, not the
+    first-person 'I live at...' the original pattern only covered."""
+    result = detect_sensitive("MSG_7", "Deliver the demo device to 22 Green Park Road, Chennai.")
+    assert len(result) == 1
+    assert result[0]["sensitivity_type"] == "private_address"
+    assert result[0]["recommended_action"] == "ask_for_confirmation"
+    assert "22 Green Park Road" not in result[0]["masked_text"]
+
+
+def test_deliver_to_person_without_address_not_flagged():
+    result = detect_sensitive("MSG_8", "Please deliver this update to John before the meeting.")
+    assert result == []
+
+
 def test_masked_text_preserves_message_structure():
     result = detect_sensitive("MSG_6", "Your OTP is 9999 today")
     masked = result[0]["masked_text"]
