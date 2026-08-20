@@ -52,7 +52,15 @@ SIGNAL_WEIGHTS = {
     "priority_sender": 0.5,
     "restated_subject": -0.5,
     "reopened": 0.5,
+    "category_action_required": 0.5,
 }
+
+# Categories classify.py would never consider actionable. If a decision
+# still gets produced for a message in one of these (e.g. extract.py's
+# keyword match fired on incidental wording in a promotional/general
+# message), that's the two independent signals disagreeing -- flagged via
+# confidence, never used to silently overrule either one.
+NON_ACTIONABLE_CATEGORIES = {"promotional", "general_information", "personal_information"}
 
 TASK_TYPE_BASE = {
     "deadline_task": 1, "submission_task": 1, "review_task": 1,
@@ -84,6 +92,8 @@ _SIGNAL_TEXT = {
     "response_required": "a response or confirmation is expected",
     "restated_subject": "this only restates an already-tracked request",
     "reopened": "a new deadline/schedule change contradicts a prior completed/cancelled status",
+    "category_action_required": "the message was independently classified as action-required",
+    "category_mismatch": "the message's own classification doesn't look actionable, despite a task/event being tracked here",
     "ambiguous_status": "the update uses uncertain language ('might'/'may'/'probably')",
 }
 _TERMINAL_TEXT = {
@@ -128,7 +138,7 @@ def _build_reason(signals, sender):
     return sentence[0].upper() + sentence[1:] + "."
 
 
-def _score(state, sender, message_text, sensitive_hit, reference_dt, is_restatement):
+def _score(state, sender, message_text, sensitive_hit, reference_dt, is_restatement, category):
     status = state.get("status", "pending")
     if status in _TERMINAL_TEXT:
         return "low", 0.9, [status], _TERMINAL_TEXT[status][0].upper() + _TERMINAL_TEXT[status][1:] + "."
@@ -186,6 +196,13 @@ def _score(state, sender, message_text, sensitive_hit, reference_dt, is_restatem
     if ambiguous:
         signals.append("ambiguous_status")
 
+    category_mismatch = category in NON_ACTIONABLE_CATEGORIES
+    if category == "action_required":
+        score += SIGNAL_WEIGHTS["category_action_required"]
+        signals.append("category_action_required")
+    elif category_mismatch:
+        signals.append("category_mismatch")
+
     level = _bucket_level(score)
 
     confidence = CONFIDENCE_BASE
@@ -195,10 +212,14 @@ def _score(state, sender, message_text, sensitive_hit, reference_dt, is_restatem
         confidence += 0.10
     if sender and sender.strip().lower() in PRIORITY_SENDER_ROLES:
         confidence += 0.10
+    if category == "action_required":
+        confidence += 0.05
     if ambiguous:
         confidence -= 0.25
     if state.get("last_conflicting"):
         confidence -= 0.15
+    if category_mismatch:
+        confidence -= 0.20
     confidence = max(0.3, min(round(confidence, 2), 0.97))
 
     return level, confidence, signals, _build_reason(signals, sender)
@@ -207,8 +228,9 @@ def _score(state, sender, message_text, sensitive_hit, reference_dt, is_restatem
 def compute_priorities(messages, classifications, extracted_items, sensitive_findings, reference_dt=None):
     """
     messages: chronological list of {message_id, timestamp(datetime), sender, message}
-    classifications: list of dicts from classify_message (unused directly today,
-        reserved so category can be folded in without changing the call signature)
+    classifications: list of dicts from classify_message -- used as an
+        independent cross-check signal (category_action_required /
+        category_mismatch), separate from extract.py's own sub_class
     extracted_items: list of dicts from extract_item
     sensitive_findings: list of dicts from detect_sensitive
     reference_dt: datetime treated as "now" for overdue/proximity. Defaults to
@@ -219,6 +241,7 @@ def compute_priorities(messages, classifications, extracted_items, sensitive_fin
         reference_dt = max(m["timestamp"] for m in messages) if messages else datetime.now()
 
     items_by_msg = {i["source_message_id"]: i for i in extracted_items}
+    category_by_msg = {c["message_id"]: c["category"] for c in classifications}
     sensitive_by_msg = {}
     for f in sensitive_findings:
         sensitive_by_msg.setdefault(f["message_id"], []).append(f)
@@ -277,8 +300,9 @@ def compute_priorities(messages, classifications, extracted_items, sensitive_fin
 
         state = registry.state_for(resolved_item_id)
         sensitive_hit = bool(sensitive_by_msg.get(mid))
+        category = category_by_msg.get(mid)
         level, confidence, signals, reason = _score(
-            state, m.get("sender"), m["message"], sensitive_hit, reference_dt, is_restatement,
+            state, m.get("sender"), m["message"], sensitive_hit, reference_dt, is_restatement, category,
         )
         decisions.append({
             "message_id": mid,

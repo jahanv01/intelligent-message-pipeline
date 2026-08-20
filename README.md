@@ -279,6 +279,8 @@ If a status-changing message (e.g. "Update: X has been completed") is the *first
 | `priority_sender` | +0.5 | sender is Project Lead / HR Team / Mentor / Operations |
 | `restated_subject` | −0.5 | the message merely re-mentions an already-tracked subject |
 | `reopened` | +0.5 | a new deadline/reschedule contradicts a prior completed/cancelled status |
+| `category_action_required` | +0.5 (and +0.05 confidence) | classify.py's independent semantic category agrees this is actionable |
+| `category_mismatch` | 0 (and −0.20 confidence) | classify.py's category is promotional/general/personal — disagrees this is actionable at all |
 | task/event base | +0.5 to +1 | sub-class weight (deadline/review/submission/follow-up tasks weigh more than a plain calendar event) |
 
 Weights sum to a score, bucketed to a level: **critical** ≥ 6, **high** ≥ 4, **medium** ≥ 2, else **low**. `completed`/`cancelled` are hard overrides straight to `low` (confidence 0.9) — *unless* a later message about the same subject moves its deadline, reschedules it, or reports a conflicting deadline, in which case the item is treated as reopened (a fresh, more specific signal contradicts a stale status) and scored normally again. Confidence starts at 0.55 and is adjusted by how much corroborating evidence is present (explicit deadline, explicit status keyword, known sender role) minus penalties for `ambiguous_status` (uncertain language: "might"/"may"/"probably" — never changes the *level*, only how sure we are of it) and `conflicting_deadline`.

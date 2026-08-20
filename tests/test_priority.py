@@ -147,3 +147,33 @@ def test_priority_sender_role_adds_signal():
     decisions = compute_priorities(messages, [], items, sens)
     d = _by_id(decisions, "MSG_1")
     assert "priority_sender" in d["signals"]
+
+
+def test_message_category_action_required_reinforces_signal():
+    rows = [("MSG_1", datetime(2026, 9, 5), "Ram", "Please submit the report by 2026-09-10")]
+    messages, items, sens = _build(rows)
+    cls = [{"message_id": "MSG_1", "category": "action_required", "confidence": 0.9, "reason": "test"}]
+    decisions = compute_priorities(messages, cls, items, sens)
+    d = _by_id(decisions, "MSG_1")
+    assert "category_action_required" in d["signals"]
+
+
+def test_message_category_mismatch_lowers_confidence():
+    """If classify.py independently thinks a message isn't actionable
+    (promotional/general/personal) but something still tracked it as a
+    task/event, that disagreement must show up as reduced confidence --
+    never silently resolved in either direction."""
+    rows = [("MSG_1", datetime(2026, 9, 5), "Ram", "Please submit the report by 2026-09-10")]
+    messages, items, sens = _build(rows)
+    matching = compute_priorities(
+        messages, [{"message_id": "MSG_1", "category": "action_required", "confidence": 0.9, "reason": "t"}],
+        items, sens,
+    )
+    mismatched = compute_priorities(
+        messages, [{"message_id": "MSG_1", "category": "promotional", "confidence": 0.9, "reason": "t"}],
+        items, sens,
+    )
+    d_match = _by_id(matching, "MSG_1")
+    d_mismatch = _by_id(mismatched, "MSG_1")
+    assert "category_mismatch" in d_mismatch["signals"]
+    assert d_mismatch["confidence"] < d_match["confidence"]
