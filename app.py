@@ -72,8 +72,21 @@ def _run_pipeline(df: pd.DataFrame):
     groups = compute_groups(messages, extracted)
     annotate_superseded(extracted, groups)
     routing = route_all(messages, sensitive_findings)
-    kb = build_knowledge_base(messages, classifications, extracted, sensitive_findings, priorities, groups, routing)
-    return classifications, extracted, sensitive_findings, priorities, groups, routing, kb
+    # NOTE: the knowledge base is NOT built here. It re-derives a
+    # min_group_size=1 grouping internally (one entry per item, not just
+    # the 2+-message ones) -- for an uploaded CSV of any size that's a much
+    # bigger object than anything this app used to hold. Building it here
+    # and caching it in gr.State would keep it retained in server memory
+    # for the whole browser session, on a 512MB host. Instead we cache
+    # only these plain lists (no extra cost -- already computed for the
+    # tables below) and rebuild the knowledge base fresh, on demand, only
+    # when a question is actually asked -- see run_ask().
+    bundle = {
+        "messages": messages, "classifications": classifications, "extracted": extracted,
+        "sensitive_findings": sensitive_findings, "priorities": priorities,
+        "groups": groups, "routing": routing,
+    }
+    return classifications, extracted, sensitive_findings, priorities, groups, routing, bundle
 
 
 def _cls_table(classifications):
@@ -129,7 +142,7 @@ def _grp_table(groups):
 
 def run_demo(_):
     df = pd.DataFrame(SAMPLE_ROWS, columns=["message_id", "timestamp", "sender", "message"])
-    cls, ext, sens, pri, grp, routing, kb = _run_pipeline(df)
+    cls, ext, sens, pri, grp, routing, bundle = _run_pipeline(df)
     summary = (
         f"**Demo mode** — {len(cls)} fabricated sample messages processed\n\n"
         f"- Classified: {len(cls)}  |  Tasks/events extracted: {len(ext)}  |  "
@@ -139,7 +152,7 @@ def run_demo(_):
         f"> Ask a question in the **Ask the Assistant** tab now — it will answer using this batch."
     )
     return (summary, _cls_table(cls), _ext_table(ext), _sens_table(sens), _pri_table(pri),
-            _grp_table(grp), _route_table(routing), kb)
+            _grp_table(grp), _route_table(routing), bundle)
 
 
 def run_upload(file):
@@ -157,7 +170,7 @@ def run_upload(file):
                 None, None, None, None, None, None, None)
 
     df = df.sort_values("timestamp").reset_index(drop=True)
-    cls, ext, sens, pri, grp, routing, kb = _run_pipeline(df)
+    cls, ext, sens, pri, grp, routing, bundle = _run_pipeline(df)
 
     summary = (
         f"**Processed {len(df)} messages**\n\n"
@@ -167,14 +180,19 @@ def run_upload(file):
         f"> Ask a question in the **Ask the Assistant** tab now — it will answer using this batch."
     )
     return (summary, _cls_table(cls), _ext_table(ext), _sens_table(sens), _pri_table(pri),
-            _grp_table(grp), _route_table(routing), kb)
+            _grp_table(grp), _route_table(routing), bundle)
 
 
-def run_ask(kb, query):
-    if kb is None:
+def run_ask(bundle, query):
+    if bundle is None:
         return "Run the Demo or Upload tab first, then come back and ask a question.", None
     if not query or not query.strip():
         return "Type a question first.", None
+    # Built fresh per question, not cached -- see the note in _run_pipeline().
+    kb = build_knowledge_base(
+        bundle["messages"], bundle["classifications"], bundle["extracted"],
+        bundle["sensitive_findings"], bundle["priorities"], bundle["groups"], bundle["routing"],
+    )
     ans = answer_query(kb, query)
     md = (
         f"**Answer:** {ans['answer']}\n\n"
@@ -200,8 +218,8 @@ with gr.Blocks(title="Message Intelligence Pipeline") as demo:
         "**Fully local — no external API calls.**"
     )
 
-    demo_kb_state = gr.State(value=None)
-    upload_kb_state = gr.State(value=None)
+    demo_bundle_state = gr.State(value=None)
+    upload_bundle_state = gr.State(value=None)
 
     with gr.Tab("Demo (fabricated samples)"):
         gr.Markdown("Click **Run Demo** to process 8 built-in fabricated messages covering all 6 categories.")
@@ -215,7 +233,7 @@ with gr.Blocks(title="Message Intelligence Pipeline") as demo:
         demo_route = gr.Dataframe(label="L2 Part 3 — Privacy Routing")
         demo_btn.click(run_demo, inputs=demo_btn,
                         outputs=[demo_summary, demo_cls, demo_ext, demo_sens, demo_pri, demo_grp,
-                                 demo_route, demo_kb_state])
+                                 demo_route, demo_bundle_state])
 
     with gr.Tab("Upload your CSV"):
         gr.Markdown(
@@ -233,7 +251,7 @@ with gr.Blocks(title="Message Intelligence Pipeline") as demo:
         upload_route = gr.Dataframe(label="L2 Part 3 — Privacy Routing")
         upload_btn.click(run_upload, inputs=file_input,
                           outputs=[upload_summary, upload_cls, upload_ext, upload_sens, upload_pri, upload_grp,
-                                   upload_route, upload_kb_state])
+                                   upload_route, upload_bundle_state])
 
     with gr.Tab("Ask the Assistant"):
         gr.Markdown(
@@ -249,11 +267,11 @@ with gr.Blocks(title="Message Intelligence Pipeline") as demo:
         ask_answer = gr.Markdown()
         ask_detail = gr.Dataframe(label="Evidence")
 
-        def _run_ask(which, query, demo_kb, upload_kb):
-            kb = demo_kb if which == "Demo batch" else upload_kb
-            return run_ask(kb, query)
+        def _run_ask(which, query, demo_bundle, upload_bundle):
+            bundle = demo_bundle if which == "Demo batch" else upload_bundle
+            return run_ask(bundle, query)
 
-        ask_btn.click(_run_ask, inputs=[which_batch, query_box, demo_kb_state, upload_kb_state],
+        ask_btn.click(_run_ask, inputs=[which_batch, query_box, demo_bundle_state, upload_bundle_state],
                       outputs=[ask_answer, ask_detail])
 
 demo.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)), ssr_mode=False)
