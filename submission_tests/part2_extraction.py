@@ -52,6 +52,10 @@ def run():
         json.dump(results, f, indent=2)
     print(f"\nSaved → {RESULTS_FILE}")
 
+    os.makedirs("sample_outputs", exist_ok=True)  # committed copy -- results/ is git-ignored
+    with open("sample_outputs/sample_extractions.json", "w") as f:
+        json.dump(results, f, indent=2)
+
     tasks = [r for r in results if r["type"] == "task"]
     events = [r for r in results if r["type"] == "event"]
     print(f"\nSummary: {len(tasks)} tasks  |  {len(events)} events  |  {len(not_extracted)} not extracted (not a task/event)")

@@ -1,0 +1,92 @@
+[
+  {
+    "message_id": "MSG_0002",
+    "category": "action_required",
+    "confidence": 0.81,
+    "reason": "Sub-class 'approval_or_review' (similarity 0.61)"
+  },
+  {
+    "message_id": "MSG_0007",
+    "category": "action_required",
+    "confidence": 0.85,
+    "reason": "Sub-class 'task_assignment' (similarity 0.70)"
+  },
+  {
+    "message_id": "MSG_0001",
+    "category": "meeting_or_event",
+    "confidence": 0.86,
+    "reason": "Sub-class 'calendar_reminder' (similarity 0.71)"
+  },
+  {
+    "message_id": "MSG_0003",
+    "category": "meeting_or_event",
+    "confidence": 0.85,
+    "reason": "Sub-class 'calendar_reminder' (similarity 0.69)"
+  },
+  {
+    "message_id": "MSG_0009",
+    "category": "personal_information",
+    "confidence": 0.85,
+    "reason": "Sub-class 'profile_or_contact' (similarity 0.69)"
+  },
+  {
+    "message_id": "MSG_0016",
+    "category": "personal_information",
+    "confidence": 0.78,
+    "reason": "Sub-class 'preference_disclosure' (similarity 0.56)"
+  },
+  {
+    "message_id": "MSG_0004",
+    "category": "general_information",
+    "confidence": 0.74,
+    "reason": "Sub-class 'logistics_info' (similarity 0.47)"
+  },
+  {
+    "message_id": "MSG_0006",
+    "category": "general_information",
+    "confidence": 0.67,
+    "reason": "Sub-class 'status_update' (similarity 0.33)"
+  },
+  {
+    "message_id": "MSG_0014",
+    "category": "promotional",
+    "confidence": 0.83,
+    "reason": "Sub-class 'discount_or_sale' (similarity 0.65)"
+  },
+  {
+    "message_id": "MSG_0015",
+    "category": "promotional",
+    "confidence": 0.83,
+    "reason": "Sub-class 'discount_or_sale' (similarity 0.66)"
+  },
+  {
+    "message_id": "MSG_0005",
+    "category": "personal_information",
+    "confidence": 0.87,
+    "reason": "Sub-class 'location_disclosure' (similarity 0.74)"
+  },
+  {
+    "message_id": "MSG_0013",
+    "category": "sensitive_information",
+    "confidence": 0.97,
+    "reason": "Credential detected: card_number"
+  },
+  {
+    "message_id": "MSG_0012",
+    "category": "personal_information",
+    "confidence": 0.7,
+    "reason": "Sub-class 'profile_or_contact' (similarity 0.40)"
+  },
+  {
+    "message_id": "MSG_0024",
+    "category": "meeting_or_event",
+    "confidence": 0.79,
+    "reason": "Sub-class 'availability_check' (similarity 0.58)"
+  },
+  {
+    "message_id": "MSG_0037",
+    "category": "general_information",
+    "confidence": 0.78,
+    "reason": "Sub-class 'status_update' (similarity 0.55)"
+  }
+]

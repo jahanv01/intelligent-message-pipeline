@@ -80,6 +80,11 @@ def run():
         json.dump(findings, f, indent=2)
     print(f"\nSaved → {RESULTS_FILE}")
 
+    os.makedirs("sample_outputs", exist_ok=True)  # committed copy -- results/ is git-ignored.
+    # Safe to commit: masked_text never contains a raw sensitive value (see sensitive.py).
+    with open("sample_outputs/sample_sensitive_findings.json", "w") as f:
+        json.dump(findings, f, indent=2)
+
     print("\nFull message text (for reference):")
     print("─" * 100)
     for msg_id in ids:

@@ -1,0 +1,287 @@
+[
+  {
+    "message_id": "MSG_0001",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "MSG_0002",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "MSG_0003",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "MSG_0004",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "MSG_0005",
+    "route": "requires_confirmation",
+    "risk": "medium",
+    "types": [
+      "private_address"
+    ],
+    "reason": "Contains personal information (private_address) -- requires user confirmation before any external processing."
+  },
+  {
+    "message_id": "MSG_0006",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "MSG_0007",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "MSG_0009",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "MSG_0012",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "MSG_0013",
+    "route": "blocked",
+    "risk": "high",
+    "types": [
+      "card_number"
+    ],
+    "reason": "Contains high-risk credential(s) (card_number) -- must not be sent externally or stored, per sensitive.py's do_not_store action."
+  },
+  {
+    "message_id": "MSG_0014",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "MSG_0015",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "MSG_0016",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "MSG_0024",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "MSG_0037",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_001",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_002",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_003",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_004",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_005",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_006",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_007",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_008",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_009",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_010",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_011",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_012",
+    "route": "blocked",
+    "risk": "high",
+    "types": [
+      "one_time_password"
+    ],
+    "reason": "Contains high-risk credential(s) (one_time_password) -- must not be sent externally or stored, per sensitive.py's do_not_store action."
+  },
+  {
+    "message_id": "DEMO_013",
+    "route": "blocked",
+    "risk": "high",
+    "types": [
+      "password"
+    ],
+    "reason": "Contains high-risk credential(s) (password) -- must not be sent externally or stored, per sensitive.py's do_not_store action."
+  },
+  {
+    "message_id": "DEMO_014",
+    "route": "requires_confirmation",
+    "risk": "medium",
+    "types": [
+      "private_address"
+    ],
+    "reason": "Contains personal information (private_address) -- requires user confirmation before any external processing."
+  },
+  {
+    "message_id": "DEMO_015",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_016",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_017",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_018",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_019",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_020",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_021",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_022",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_023",
+    "route": "local",
+    "risk": "none",
+    "types": [],
+    "reason": "No sensitive information detected in this message -- safe to process locally."
+  },
+  {
+    "message_id": "DEMO_024",
+    "route": "blocked",
+    "risk": "high",
+    "types": [
+      "auth_token"
+    ],
+    "reason": "Contains high-risk credential(s) (auth_token) -- must not be sent externally or stored, per sensitive.py's do_not_store action."
+  }
+]

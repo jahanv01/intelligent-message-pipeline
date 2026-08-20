@@ -1,0 +1,264 @@
+[
+  {
+    "message_id": "MSG_0001",
+    "item_id": "EVENT_MSG_0001",
+    "priority": "medium",
+    "reason": "The deadline has already passed.",
+    "signals": [
+      "overdue"
+    ],
+    "confidence": 0.7
+  },
+  {
+    "message_id": "MSG_0002",
+    "item_id": "TASK_MSG_0002",
+    "priority": "high",
+    "reason": "The deadline has already passed and a response or confirmation is expected.",
+    "signals": [
+      "response_required",
+      "overdue",
+      "category_action_required"
+    ],
+    "confidence": 0.75
+  },
+  {
+    "message_id": "MSG_0003",
+    "item_id": "EVENT_MSG_0003",
+    "priority": "high",
+    "reason": "The deadline has already passed and a response or confirmation is expected.",
+    "signals": [
+      "response_required",
+      "overdue"
+    ],
+    "confidence": 0.7
+  },
+  {
+    "message_id": "MSG_0007",
+    "item_id": "TASK_MSG_0007",
+    "priority": "high",
+    "reason": "The deadline has already passed and a response or confirmation is expected.",
+    "signals": [
+      "response_required",
+      "overdue",
+      "category_action_required"
+    ],
+    "confidence": 0.75
+  },
+  {
+    "message_id": "MSG_0012",
+    "item_id": "TASK_MSG_0012",
+    "priority": "low",
+    "reason": "No strong urgency signals were found.",
+    "signals": [
+      "no_deadline",
+      "category_mismatch"
+    ],
+    "confidence": 0.35
+  },
+  {
+    "message_id": "MSG_0037",
+    "item_id": "TASK_MSG_0037",
+    "priority": "high",
+    "reason": "The deadline has already passed and a response or confirmation is expected.",
+    "signals": [
+      "response_required",
+      "overdue",
+      "category_mismatch"
+    ],
+    "confidence": 0.5
+  },
+  {
+    "message_id": "DEMO_001",
+    "item_id": "EVENT_MSG_0027",
+    "priority": "high",
+    "reason": "The deadline is today and the message uses explicit urgent language.",
+    "signals": [
+      "response_required",
+      "deadline_today",
+      "urgent_language",
+      "deadline_moved_later",
+      "restated_subject",
+      "category_action_required"
+    ],
+    "confidence": 0.85
+  },
+  {
+    "message_id": "DEMO_002",
+    "item_id": "TASK_MSG_0028",
+    "priority": "low",
+    "reason": "The item was marked completed, so it no longer needs action.",
+    "signals": [
+      "completed"
+    ],
+    "confidence": 0.9
+  },
+  {
+    "message_id": "DEMO_003",
+    "item_id": "REF_MSG_0908",
+    "priority": "low",
+    "reason": "The item was marked cancelled, so it no longer needs action.",
+    "signals": [
+      "cancelled"
+    ],
+    "confidence": 0.9
+  },
+  {
+    "message_id": "DEMO_004",
+    "item_id": "TASK_DEMO_004",
+    "priority": "low",
+    "reason": "The message was independently classified as action-required.",
+    "signals": [
+      "no_deadline",
+      "category_action_required"
+    ],
+    "confidence": 0.6
+  },
+  {
+    "message_id": "DEMO_005",
+    "item_id": "TASK_DEMO_005",
+    "priority": "medium",
+    "reason": "A response or confirmation is expected.",
+    "signals": [
+      "response_required",
+      "no_deadline",
+      "category_mismatch"
+    ],
+    "confidence": 0.35
+  },
+  {
+    "message_id": "DEMO_006",
+    "item_id": "REF_MSG_0908",
+    "priority": "medium",
+    "reason": "The deadline is within the next two days and two messages state different deadlines for the same item.",
+    "signals": [
+      "reopened",
+      "deadline_within_2_days",
+      "conflicting_deadline",
+      "restated_subject",
+      "category_action_required"
+    ],
+    "confidence": 0.6
+  },
+  {
+    "message_id": "DEMO_007",
+    "item_id": "EVENT_MSG_0011",
+    "priority": "medium",
+    "reason": "The deadline is within the next two days and this only restates an already-tracked request.",
+    "signals": [
+      "deadline_within_2_days",
+      "restated_subject"
+    ],
+    "confidence": 0.8
+  },
+  {
+    "message_id": "DEMO_008",
+    "item_id": "EVENT_MSG_0023",
+    "priority": "low",
+    "reason": "The item was marked cancelled, so it no longer needs action.",
+    "signals": [
+      "cancelled"
+    ],
+    "confidence": 0.9
+  },
+  {
+    "message_id": "DEMO_009",
+    "item_id": "EVENT_MSG_0011",
+    "priority": "medium",
+    "reason": "The deadline is within the next two days and this only restates an already-tracked request.",
+    "signals": [
+      "deadline_within_2_days",
+      "restated_subject"
+    ],
+    "confidence": 0.8
+  },
+  {
+    "message_id": "DEMO_010",
+    "item_id": "TASK_DEMO_010",
+    "priority": "medium",
+    "reason": "The deadline is later this week and the sender holds a priority role.",
+    "signals": [
+      "deadline_within_7_days",
+      "priority_sender",
+      "category_action_required"
+    ],
+    "confidence": 0.85
+  },
+  {
+    "message_id": "DEMO_011",
+    "item_id": "EVENT_DEMO_011",
+    "priority": "medium",
+    "reason": "The deadline is later this week and the sender holds a priority role.",
+    "signals": [
+      "deadline_within_7_days",
+      "priority_sender"
+    ],
+    "confidence": 0.8
+  },
+  {
+    "message_id": "DEMO_016",
+    "item_id": "EVENT_MSG_0027",
+    "priority": "high",
+    "reason": "The deadline is today and the message uses explicit urgent language.",
+    "signals": [
+      "response_required",
+      "deadline_today",
+      "urgent_language",
+      "deadline_moved_later",
+      "restated_subject",
+      "ambiguous_status",
+      "category_action_required"
+    ],
+    "confidence": 0.5
+  },
+  {
+    "message_id": "DEMO_017",
+    "item_id": "EVENT_MSG_0011",
+    "priority": "medium",
+    "reason": "The deadline is within the next two days and this only restates an already-tracked request.",
+    "signals": [
+      "deadline_within_2_days",
+      "restated_subject",
+      "ambiguous_status"
+    ],
+    "confidence": 0.45
+  },
+  {
+    "message_id": "DEMO_020",
+    "item_id": "TASK_MSG_0032",
+    "priority": "low",
+    "reason": "A later message pushed the deadline out and this only restates an already-tracked request.",
+    "signals": [
+      "deadline_future",
+      "deadline_moved_later",
+      "restated_subject",
+      "category_action_required"
+    ],
+    "confidence": 0.85
+  },
+  {
+    "message_id": "DEMO_021",
+    "item_id": "TASK_MSG_0035",
+    "priority": "high",
+    "reason": "The deadline has already passed and a response or confirmation is expected.",
+    "signals": [
+      "response_required",
+      "overdue",
+      "restated_subject",
+      "category_mismatch"
+    ],
+    "confidence": 0.5
+  },
+  {
+    "message_id": "DEMO_023",
+    "item_id": "TASK_DEMO_023",
+    "priority": "medium",
+    "reason": "The deadline is later this week and the sender holds a priority role.",
+    "signals": [
+      "deadline_within_7_days",
+      "priority_sender",
+      "ambiguous_status",
+      "category_action_required"
+    ],
+    "confidence": 0.6
+  }
+]

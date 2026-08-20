@@ -1,0 +1,272 @@
+[
+  {
+    "group_id": "GROUP_001",
+    "title": "Calendar update: family dinner, 2026-09-19 at 10:00, the library.",
+    "type": "event",
+    "related_message_ids": [
+      "MSG_0001",
+      "MSG_0951",
+      "MSG_0958"
+    ],
+    "related_item_ids": [
+      "EVENT_MSG_0001",
+      "EVENT_MSG_0951",
+      "EVENT_MSG_0958"
+    ],
+    "summary": "This event was created, then rescheduled (2x).",
+    "status": "Rescheduled",
+    "latest_deadline": "2026-10-06",
+    "latest_time": "10:00",
+    "confidence": 0.86
+  },
+  {
+    "group_id": "GROUP_002",
+    "title": "Can you review the privacy checklist before 2026-09-09?",
+    "type": "task",
+    "related_message_ids": [
+      "MSG_0002",
+      "MSG_0901",
+      "MSG_0915",
+      "MSG_0921",
+      "MSG_0980"
+    ],
+    "related_item_ids": [
+      "TASK_MSG_0002",
+      "TASK_MSG_0901",
+      "TASK_MSG_0915",
+      "TASK_MSG_0921",
+      "TASK_MSG_0980"
+    ],
+    "summary": "This task was created, then followed up on (3x), flagged with a conflicting deadline.",
+    "status": "In progress",
+    "latest_deadline": "2026-09-30",
+    "latest_time": null,
+    "confidence": 0.82
+  },
+  {
+    "group_id": "GROUP_003",
+    "title": "mentor catch-up happens on 2026-09-16 at 11:00 in the city clinic.",
+    "type": "event",
+    "related_message_ids": [
+      "MSG_0003",
+      "MSG_0952",
+      "MSG_0969"
+    ],
+    "related_item_ids": [
+      "EVENT_MSG_0003",
+      "EVENT_MSG_0952",
+      "EVENT_MSG_0969"
+    ],
+    "summary": "This event was created, then rescheduled (2x).",
+    "status": "Rescheduled",
+    "latest_deadline": "2026-10-05",
+    "latest_time": "14:00",
+    "confidence": 0.86
+  },
+  {
+    "group_id": "GROUP_004",
+    "title": "Please reply to the client email by 2026-09-04.",
+    "type": "task",
+    "related_message_ids": [
+      "MSG_0007",
+      "MSG_0902",
+      "MSG_0922",
+      "MSG_0994",
+      "MSG_0997",
+      "MSG_1009",
+      "MSG_1012"
+    ],
+    "related_item_ids": [
+      "TASK_MSG_0007",
+      "TASK_MSG_0902",
+      "TASK_MSG_0922",
+      "TASK_MSG_0994",
+      "TASK_MSG_0997",
+      "TASK_MSG_1009",
+      "TASK_MSG_1012"
+    ],
+    "summary": "This task was created, then followed up on (6x).",
+    "status": "In progress",
+    "latest_deadline": "2026-09-04",
+    "latest_time": null,
+    "confidence": 0.95
+  },
+  {
+    "group_id": "GROUP_006",
+    "title": "Please join the internship orientation on 2026-09-18, 13:00 at Conference Room\u2026",
+    "type": "event",
+    "related_message_ids": [
+      "MSG_0011",
+      "MSG_0953",
+      "MSG_0955",
+      "DEMO_007",
+      "DEMO_009",
+      "DEMO_017"
+    ],
+    "related_item_ids": [
+      "EVENT_MSG_0011",
+      "EVENT_DEMO_007",
+      "EVENT_DEMO_009",
+      "EVENT_DEMO_017",
+      "EVENT_MSG_0953",
+      "EVENT_MSG_0955"
+    ],
+    "summary": "This event was created, then rescheduled (4x), mentioned again with uncertain status.",
+    "status": "Unclear",
+    "latest_deadline": "2026-10-07",
+    "latest_time": "17:30",
+    "confidence": 0.8
+  },
+  {
+    "group_id": "GROUP_009",
+    "title": "Calendar update: team stand-up, 2026-09-04 at 15:00, the college auditorium.",
+    "type": "event",
+    "related_message_ids": [
+      "MSG_0023",
+      "MSG_0954",
+      "DEMO_008"
+    ],
+    "related_item_ids": [
+      "EVENT_MSG_0023",
+      "EVENT_DEMO_008",
+      "EVENT_MSG_0954"
+    ],
+    "summary": "This event was created, then rescheduled, marked cancelled.",
+    "status": "Cancelled",
+    "latest_deadline": "2026-10-02",
+    "latest_time": "13:00",
+    "confidence": 0.86
+  },
+  {
+    "group_id": "GROUP_010",
+    "title": "Please confirm the interview slot by 2026-09-05.",
+    "type": "event",
+    "related_message_ids": [
+      "MSG_0027",
+      "MSG_0906",
+      "MSG_0926",
+      "MSG_0972",
+      "MSG_0976",
+      "MSG_0982",
+      "MSG_1002",
+      "DEMO_001",
+      "DEMO_016"
+    ],
+    "related_item_ids": [
+      "EVENT_MSG_0027",
+      "EVENT_DEMO_001",
+      "EVENT_DEMO_016",
+      "EVENT_MSG_0906",
+      "EVENT_MSG_0926",
+      "EVENT_MSG_0972",
+      "EVENT_MSG_0976",
+      "EVENT_MSG_0982",
+      "EVENT_MSG_1002"
+    ],
+    "summary": "This event was created, then followed up on (3x), flagged with a conflicting deadline (3x), had its deadline changed, mentioned again with uncertain status.",
+    "status": "Unclear",
+    "latest_deadline": "2026-10-05",
+    "latest_time": "10 AM",
+    "confidence": 0.7
+  },
+  {
+    "group_id": "GROUP_011",
+    "title": "Don't forget to email the signed document; deadline is 2026-09-04.",
+    "type": "task",
+    "related_message_ids": [
+      "MSG_0028",
+      "MSG_0907",
+      "MSG_0918",
+      "MSG_0927",
+      "MSG_0933",
+      "MSG_1000",
+      "MSG_1015",
+      "DEMO_002"
+    ],
+    "related_item_ids": [
+      "TASK_MSG_0028",
+      "TASK_MSG_0918",
+      "TASK_MSG_0927"
+    ],
+    "summary": "This task was created, then followed up on (5x), marked completed (2x).",
+    "status": "Completed",
+    "latest_deadline": "2026-09-04",
+    "latest_time": null,
+    "confidence": 0.95
+  },
+  {
+    "group_id": "GROUP_012",
+    "title": "Don't forget to upload the assignment; deadline is 2026-09-09.",
+    "type": "task",
+    "related_message_ids": [
+      "MSG_0032",
+      "MSG_0909",
+      "MSG_0929",
+      "MSG_0991",
+      "MSG_1006",
+      "DEMO_020"
+    ],
+    "related_item_ids": [
+      "TASK_MSG_0032",
+      "TASK_DEMO_020",
+      "TASK_MSG_0909",
+      "TASK_MSG_0929"
+    ],
+    "summary": "This task was created, then followed up on (4x), had its deadline changed.",
+    "status": "In progress",
+    "latest_deadline": "2026-10-20",
+    "latest_time": null,
+    "confidence": 0.95
+  },
+  {
+    "group_id": "GROUP_013",
+    "title": "Complete the onboarding form is due on 2026-09-10.",
+    "type": "task",
+    "related_message_ids": [
+      "MSG_0035",
+      "MSG_0910",
+      "MSG_0913",
+      "MSG_0916",
+      "MSG_0930",
+      "MSG_1004",
+      "DEMO_021"
+    ],
+    "related_item_ids": [
+      "TASK_MSG_0035",
+      "TASK_DEMO_021",
+      "TASK_MSG_0910",
+      "TASK_MSG_0913",
+      "TASK_MSG_0916",
+      "TASK_MSG_0930"
+    ],
+    "summary": "This task was created, then followed up on (6x).",
+    "status": "In progress",
+    "latest_deadline": "2026-09-10",
+    "latest_time": null,
+    "confidence": 0.95
+  },
+  {
+    "group_id": "GROUP_032",
+    "title": "Following up on update the project tracker; is it in progress?",
+    "type": "reference",
+    "related_message_ids": [
+      "MSG_0908",
+      "MSG_0911",
+      "MSG_0928",
+      "MSG_0942",
+      "MSG_0996",
+      "MSG_1011",
+      "DEMO_003",
+      "DEMO_006"
+    ],
+    "related_item_ids": [
+      "REF_MSG_0908",
+      "TASK_DEMO_006"
+    ],
+    "summary": "This item was created, then followed up on (4x), marked cancelled (2x), flagged with a conflicting deadline.",
+    "status": "In progress",
+    "latest_deadline": "2026-10-06",
+    "latest_time": null,
+    "confidence": 0.7
+  }
+]

@@ -1,0 +1,80 @@
+[
+  {
+    "item_id": "TASK_MSG_0002",
+    "type": "task",
+    "sub_class": "review_task",
+    "title": "Can you review the privacy checklist before 2026-09-09?",
+    "description": "Can you review the privacy checklist before 2026-09-09?",
+    "deadline": "2026-09-09",
+    "time": null,
+    "person": null,
+    "priority": "medium",
+    "sender": "Ishaan",
+    "source_message_id": "MSG_0002"
+  },
+  {
+    "item_id": "TASK_MSG_0007",
+    "type": "task",
+    "sub_class": "follow_up_task",
+    "title": "Please reply to the client email by 2026-09-04.",
+    "description": "For today: Please reply to the client email by 2026-09-04.",
+    "deadline": "2026-09-04",
+    "time": null,
+    "person": null,
+    "priority": "medium",
+    "sender": "Ananya",
+    "source_message_id": "MSG_0007"
+  },
+  {
+    "item_id": "EVENT_MSG_0001",
+    "type": "event",
+    "sub_class": "calendar_event",
+    "title": "Calendar update: family dinner, 2026-09-19 at 10:00, the library.",
+    "description": "For today: Calendar update: family dinner, 2026-09-19 at 10:00, the library.",
+    "deadline": "2026-09-19",
+    "time": "10:00",
+    "person": null,
+    "priority": "medium",
+    "sender": "Meera",
+    "source_message_id": "MSG_0001"
+  },
+  {
+    "item_id": "EVENT_MSG_0003",
+    "type": "event",
+    "sub_class": "catchup_or_interview",
+    "title": "mentor catch-up happens on 2026-09-16 at 11:00 in the city clinic.",
+    "description": "FYI: Reminder: mentor catch-up happens on 2026-09-16 at 11:00 in the city clinic.",
+    "deadline": "2026-09-16",
+    "time": "11:00",
+    "person": null,
+    "priority": "medium",
+    "sender": "Kabir",
+    "source_message_id": "MSG_0003"
+  },
+  {
+    "item_id": "TASK_MSG_0012",
+    "type": "task",
+    "sub_class": "submission_task",
+    "title": "I will send the login details separately.",
+    "description": "FYI: I will send the login details separately.",
+    "deadline": null,
+    "time": null,
+    "person": null,
+    "priority": "medium",
+    "sender": "Neha",
+    "source_message_id": "MSG_0012"
+  },
+  {
+    "item_id": "TASK_MSG_0037",
+    "type": "task",
+    "sub_class": "review_task",
+    "title": "The review could be Friday afternoon.",
+    "description": "One more thing: The review could be Friday afternoon.",
+    "deadline": "2026-09-04",
+    "time": null,
+    "person": null,
+    "priority": "medium",
+    "sender": "Meera",
+    "source_message_id": "MSG_0037"
+  }
+]

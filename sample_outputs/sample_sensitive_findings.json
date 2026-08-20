@@ -1,0 +1,16 @@
+[
+  {
+    "message_id": "MSG_0005",
+    "sensitivity_type": "private_address",
+    "risk": "medium",
+    "masked_text": "Hi, My home address is *****************************.",
+    "recommended_action": "ask_for_confirmation"
+  },
+  {
+    "message_id": "MSG_0013",
+    "sensitivity_type": "card_number",
+    "risk": "high",
+    "masked_text": "One more thing: My card number is **********************.",
+    "recommended_action": "do_not_store"
+  }
+]

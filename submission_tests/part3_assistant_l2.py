@@ -54,6 +54,10 @@ def run_demo():
         json.dump(answers, f, indent=2)
     print(f"\nSaved -> {RESULTS_FILE}")
 
+    os.makedirs("sample_outputs", exist_ok=True)  # committed copy -- results/ is git-ignored
+    with open("sample_outputs/sample_assistant_answers.json", "w") as f:
+        json.dump(answers, f, indent=2)
+
 
 if __name__ == "__main__":
     run_demo()

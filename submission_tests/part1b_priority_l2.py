@@ -41,6 +41,10 @@ def run_demo():
         json.dump(demo_decisions, f, indent=2)
     print(f"\nSaved -> {RESULTS_FILE}")
 
+    os.makedirs("sample_outputs", exist_ok=True)  # committed copy -- results/ is git-ignored
+    with open("sample_outputs/sample_demo_priorities.json", "w") as f:
+        json.dump(demo_decisions, f, indent=2)
+
     covered = {p["message_id"] for p in demo_decisions}
     all_demo_ids = {f"DEMO_{i:03d}" for i in range(1, 25)}
     not_actionable = sorted(all_demo_ids - covered)
